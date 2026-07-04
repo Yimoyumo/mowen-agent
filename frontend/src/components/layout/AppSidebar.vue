@@ -162,15 +162,34 @@ function handleCreate(name: string, description: string, kbType: string) {
 
 .sidebar-body {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .action-card {
   border: none;
   background: #fff;
   border-radius: 12px;
+}
+
+.action-card:first-of-type {
+  flex-shrink: 0;
+}
+
+.action-card:last-of-type {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.action-card:last-of-type :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 </style>

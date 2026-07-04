@@ -93,7 +93,6 @@ watch(
   () => store.currentKbId,
   (kbId) => {
     if (kbId) {
-      expandedKbId.value = kbId
       void loadDocs(kbId)
     }
   },
@@ -139,7 +138,6 @@ watch(
               <div class="kb-item-name">{{ kb.name }}</div>
               <div class="kb-item-meta">
                 <el-tag size="small" effect="plain">{{ kbTypeLabel(kb.kb_type) }}</el-tag>
-                <span v-if="kb.description" class="kb-item-desc">{{ kb.description }}</span>
               </div>
             </div>
           </div>
@@ -301,6 +299,8 @@ watch(
 .kb-list {
   display: flex;
   flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .kb-item-wrapper {
