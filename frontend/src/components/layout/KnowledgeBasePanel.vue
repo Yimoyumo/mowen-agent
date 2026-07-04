@@ -299,8 +299,6 @@ watch(
 .kb-list {
   display: flex;
   flex-direction: column;
-  max-height: 280px;
-  overflow-y: auto;
 }
 
 .kb-item-wrapper {

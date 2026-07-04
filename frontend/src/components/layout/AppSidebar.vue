@@ -175,13 +175,25 @@ function handleCreate(name: string, description: string, kbType: string) {
   border-radius: 12px;
 }
 
+/* 知识库卡片：可收缩，内容溢出滚动 */
 .action-card:first-of-type {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-height: 80px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.action-card:last-of-type {
+.action-card:first-of-type :deep(.el-card__body) {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+
+/* 对话记录卡片：占满剩余空间 */
+.action-card:last-of-type {
+  flex: 1 1 0;
+  min-height: 120px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
