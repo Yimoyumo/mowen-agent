@@ -45,7 +45,6 @@ watch(
 <template>
   <div class="home" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
     <AppSidebar
-      :config="config"
       :creating="kbManager.creating.value"
       :building="kbManager.building.value"
       :uploading="kbManager.uploading.value"
@@ -75,6 +74,7 @@ watch(
         :knowledge-bases="kbManager.store.knowledgeBases"
         :current-kb-id="kbManager.store.currentKbId"
         :current-result="currentResult"
+        :config="config"
         @send="sendQuestion"
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"

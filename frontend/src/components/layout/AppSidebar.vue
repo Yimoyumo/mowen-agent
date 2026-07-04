@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { ConfigResponse, AskResponse } from '@/types/api'
+import type { AskResponse } from '@/types/api'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import ChatHistoryPanel from './ChatHistoryPanel.vue'
 
 interface Props {
-  config: ConfigResponse | null
   creating: boolean
   building: boolean
   uploading: boolean
@@ -15,7 +13,7 @@ interface Props {
   currentResult: AskResponse | null
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 const emit = defineEmits<{
   'create-kb': [name: string, description: string, kbType: string]
   'delete-kb': [kbId: string]
@@ -27,16 +25,6 @@ const emit = defineEmits<{
   'remove-history': [index: number]
   'clear-history': []
 }>()
-
-const splitLabel = computed(() =>
-  props.config?.chapter_split ? '章节阈值' : 'chunk_size',
-)
-
-const splitValue = computed(() =>
-  props.config?.chapter_split
-    ? `${props.config.chapter_chunk_threshold} 字`
-    : `${props.config?.chunk_size} 字`,
-)
 
 function handleCreate(name: string, description: string, kbType: string) {
   emit('create-kb', name, description, kbType)
@@ -61,51 +49,6 @@ function handleCreate(name: string, description: string, kbType: string) {
     </div>
 
     <div v-if="!collapsed" class="sidebar-body">
-      <el-card v-if="config" class="config-card" shadow="never">
-        <template #header>
-          <div class="card-header">
-            <el-icon><Setting /></el-icon>
-            <span>当前配置</span>
-          </div>
-        </template>
-        <div class="config-grid">
-          <div class="config-item">
-            <span class="config-label">对话厂商</span>
-            <span class="config-value">{{ config.chat_provider }}</span>
-          </div>
-          <div class="config-item">
-            <span class="config-label">对话模型</span>
-            <span class="config-value">{{ config.chat_model }}</span>
-          </div>
-          <div class="config-item">
-            <span class="config-label">Embedding</span>
-            <span class="config-value">{{ config.embedding_model }}</span>
-          </div>
-          <div class="config-item">
-            <span class="config-label">top_k</span>
-            <span class="config-value">{{ config.top_k }}</span>
-          </div>
-          <div class="config-item">
-            <span class="config-label">切分方式</span>
-            <span class="config-value">
-              {{ config.chapter_split ? '按章节切分' : '普通切分' }}
-            </span>
-          </div>
-          <div class="config-item">
-            <span class="config-label">{{ splitLabel }}</span>
-            <span class="config-value">{{ splitValue }}</span>
-          </div>
-          <div class="config-item full-width">
-            <span class="config-label">查询扩写</span>
-            <span class="config-value">
-              <el-tag :type="config.enable_query_expansion ? 'success' : 'info'" size="small">
-                {{ config.enable_query_expansion ? '开启' : '关闭' }}
-              </el-tag>
-            </span>
-          </div>
-        </div>
-      </el-card>
-
       <el-card class="action-card" shadow="never">
         <KnowledgeBasePanel
           :creating="creating"
@@ -225,50 +168,9 @@ function handleCreate(name: string, description: string, kbType: string) {
   gap: 16px;
 }
 
-.config-card,
 .action-card {
   border: none;
   background: #fff;
   border-radius: 12px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: #303133;
-  font-size: 14px;
-}
-
-.config-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.config-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  padding: 6px 0;
-  border-bottom: 1px solid #f5f5f5;
-}
-
-.config-item:last-child {
-  border-bottom: none;
-}
-
-.config-label {
-  color: #909399;
-}
-
-.config-value {
-  color: #303133;
-  font-weight: 500;
-  text-align: right;
-  max-width: 140px;
-  word-break: break-all;
 }
 </style>
