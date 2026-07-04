@@ -10,6 +10,7 @@ interface Props {
   loading: boolean
   streaming: boolean
   disabled: boolean
+  kbSelected: boolean
   currentResult: AskResponse | null
 }
 
@@ -36,7 +37,7 @@ defineExpose({ scrollToBottom })
 <template>
   <main class="chat-area">
     <div ref="messagesRef" class="chat-messages">
-      <HomeHero v-if="!hasResult" @select="emit('selectExample', $event)" />
+      <HomeHero v-if="!hasResult" :kb-selected="kbSelected" @select="emit('selectExample', $event)" />
 
       <template v-else>
         <ChatMessage
@@ -54,6 +55,14 @@ defineExpose({ scrollToBottom })
     </div>
 
     <div class="chat-footer">
+      <ChatInput
+        :model-value="question"
+        :loading="loading"
+        :disabled="disabled"
+        :kb-selected="kbSelected"
+        @update:model-value="emit('update:question', $event)"
+        @send="emit('send')"
+      />
       <button
         v-if="hasResult"
         class="context-toggle"
@@ -61,15 +70,8 @@ defineExpose({ scrollToBottom })
         @click="emit('toggleContext')"
       >
         <el-icon><Document /></el-icon>
-        <span>参考上下文</span>
+        <span>查看参考上下文</span>
       </button>
-      <ChatInput
-        :model-value="question"
-        :loading="loading"
-        :disabled="disabled"
-        @update:model-value="emit('update:question', $event)"
-        @send="emit('send')"
-      />
     </div>
   </main>
 </template>
@@ -101,7 +103,7 @@ defineExpose({ scrollToBottom })
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid #e4e7ed;
   background: #fff;
@@ -112,7 +114,8 @@ defineExpose({ scrollToBottom })
 }
 
 .context-toggle:hover {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: #1d1d1d;
+  color: #1d1d1d;
+  background: #f8f8f8;
 }
 </style>

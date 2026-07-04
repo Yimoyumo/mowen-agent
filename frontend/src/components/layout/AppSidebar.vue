@@ -38,8 +38,13 @@ function handleCreate(name: string, description: string, kbType: string) {
 <template>
   <aside class="app-sidebar">
     <div class="logo">
-      <span class="logo-icon">K</span>
-      <span class="logo-text">RAG 问答</span>
+      <span class="logo-icon">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="40" height="40" rx="10" fill="#1d1d1d"/>
+          <path d="M12 28V12h4l8 10V12h4v16h-4l-8-10v10h-4z" fill="#fff"/>
+        </svg>
+      </span>
+      <span class="logo-text">墨问</span>
     </div>
 
     <div class="nav-section">
@@ -135,14 +140,14 @@ function handleCreate(name: string, description: string, kbType: string) {
 .logo-icon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  background: #000;
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.logo-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .logo-text {

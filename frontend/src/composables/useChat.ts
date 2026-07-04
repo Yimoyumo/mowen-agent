@@ -22,6 +22,11 @@ export function useChat() {
       return
     }
 
+    if (!kbStore.currentKbId) {
+      ElMessage.warning('请先选择一个知识库')
+      return
+    }
+
     loading.value = true
     streaming.value = true
     const draft: AskResponse = {

@@ -5,9 +5,11 @@ interface Props {
   modelValue: string
   loading: boolean
   disabled: boolean
+  kbSelected: boolean
 }
 
 const props = defineProps<Props>()
+const isDisabled = computed(() => props.disabled || !props.kbSelected)
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   send: []
@@ -20,7 +22,7 @@ function handleInput(e: Event) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && hasContent.value) {
+  if (e.key === 'Enter' && !e.shiftKey && hasContent.value && !isDisabled.value) {
     e.preventDefault()
     emit('send')
   }
@@ -34,28 +36,25 @@ function handleKeydown(e: KeyboardEvent) {
         :value="modelValue"
         rows="2"
         class="chat-textarea"
-        placeholder="输入问题，开始探索小说世界…"
-        :disabled="disabled"
+        :placeholder="kbSelected ? '输入你的问题…' : '请先选择一个知识库后再提问'"
+        :disabled="isDisabled"
         @input="handleInput"
         @keydown="handleKeydown"
       />
       <div class="chat-toolbar">
         <div class="toolbar-left">
-          <button class="toolbar-btn" title="附件" :disabled="disabled">
-            <el-icon><Plus /></el-icon>
-          </button>
-          <button class="toolbar-btn" title="联网搜索" :disabled="disabled">
-            <el-icon><Search /></el-icon>
+          <button class="toolbar-btn" title="附件" :disabled="isDisabled">
+            <el-icon><DocumentAdd /></el-icon>
           </button>
         </div>
         <button
           class="send-btn"
-          :class="{ active: hasContent && !loading && !disabled, loading: loading }"
-          :disabled="!hasContent || loading || disabled"
+          :class="{ active: hasContent && !loading && !isDisabled, loading: loading }"
+          :disabled="!hasContent || loading || isDisabled"
           @click="emit('send')"
         >
           <el-icon v-if="loading" class="is-loading"><Loading /></el-icon>
-          <el-icon v-else><Promotion /></el-icon>
+          <span v-else class="send-text">发送</span>
         </button>
       </div>
     </div>
@@ -129,9 +128,9 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 .send-btn {
-  width: 36px;
+  min-width: 64px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: 18px;
   border: none;
   background: #e4e7ed;
   color: #fff;
@@ -140,20 +139,28 @@ function handleKeydown(e: KeyboardEvent) {
   justify-content: center;
   cursor: not-allowed;
   transition: all 0.2s;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .send-btn.active {
-  background: #000;
+  background: #1d1d1d;
   cursor: pointer;
 }
 
 .send-btn.active:hover {
-  background: #333;
+  background: #000;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 
 .send-btn.loading {
-  background: #409eff;
+  background: #1d1d1d;
   cursor: wait;
+}
+
+.send-text {
+  padding: 0 4px;
 }
 
 .input-tip {

@@ -15,7 +15,13 @@ function formatText(text: string): string {
 
 <template>
   <div class="message" :class="[type === 'user' ? 'user-message' : 'ai-message']">
-    <div class="avatar" :class="{ ai: type === 'ai' }">{{ type === 'user' ? '问' : '答' }}</div>
+    <div class="avatar" :class="{ ai: type === 'ai' }">
+      <svg v-if="type === 'ai'" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="40" height="40" rx="10" fill="#1d1d1d"/>
+        <path d="M12 28V12h4l8 10V12h4v16h-4l-8-10v10h-4z" fill="#fff"/>
+      </svg>
+      <span v-else>我</span>
+    </div>
     <div class="message-body">
       <div class="message-title">{{ title }}</div>
       <div v-if="streaming && !content" class="typing-indicator">
@@ -51,6 +57,7 @@ function formatText(text: string): string {
   font-size: 14px;
   font-weight: 600;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .avatar.ai {
@@ -58,24 +65,39 @@ function formatText(text: string): string {
   color: #fff;
 }
 
+.avatar svg {
+  width: 24px;
+  height: 24px;
+}
+
 .message-body {
   flex: 1;
   min-width: 0;
-  padding: 16px 20px;
-  border-radius: 12px;
+  padding: 18px 22px;
+  border-radius: 16px;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f0f0f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .ai-message .message-body {
-  background: #f5f5f5;
+  background: #f8f8f8;
+  border-color: #f0f0f0;
+}
+
+.user-message .message-body {
+  background: #fff;
+  border-color: #e4e7ed;
 }
 
 .message-title {
   font-size: 12px;
   color: #909399;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .message-content {
@@ -89,7 +111,7 @@ function formatText(text: string): string {
   display: inline-block;
   width: 6px;
   height: 18px;
-  background: #409eff;
+  background: #1d1d1d;
   border-radius: 2px;
   margin-left: 4px;
   animation: blink 1s step-end infinite;

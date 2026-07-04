@@ -53,6 +53,7 @@ watch(
         :loading="loading"
         :streaming="streaming"
         :disabled="!isReady"
+        :kb-selected="!!kbManager.store.currentKbId"
         :current-result="currentResult"
         @send="sendQuestion"
         @select-example="setQuestion"

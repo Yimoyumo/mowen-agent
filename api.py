@@ -126,6 +126,9 @@ def ask_endpoint(request: AskRequest) -> AskResponse:
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
 
+    if not request.kb_id:
+        raise HTTPException(status_code=400, detail="请先选择一个知识库")
+
     try:
         result = ask(request.question, request.kb_id)
     except Exception as exc:
@@ -146,6 +149,9 @@ def ask_stream_endpoint(request: AskRequest) -> StreamingResponse:
     """
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
+
+    if not request.kb_id:
+        raise HTTPException(status_code=400, detail="请先选择一个知识库")
 
     async def event_generator():
         try:
