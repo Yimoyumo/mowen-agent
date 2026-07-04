@@ -349,9 +349,8 @@ watch(
   font-size: 14px;
   font-weight: 500;
   color: #303133;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+  line-height: 1.4;
 }
 
 .kb-item-meta {
@@ -359,14 +358,14 @@ watch(
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .kb-item-desc {
   font-size: 12px;
   color: #909399;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+  line-height: 1.4;
 }
 
 .kb-item-actions {

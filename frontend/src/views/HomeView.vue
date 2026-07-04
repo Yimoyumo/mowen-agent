@@ -6,13 +6,24 @@ import ContextPanel from '@/components/chat/ContextPanel.vue'
 import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
+import { useChatStore } from '@/stores/chat'
 
 const { config, isReady } = useConfig()
 const { question, loading, streaming, currentResult, sendQuestion, setQuestion } = useChat()
 const kbManager = useKnowledgeBaseManager()
+const chatStore = useChatStore()
 
 const showContext = ref(false)
 const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
+const sidebarCollapsed = ref(false)
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+function backToHome() {
+  chatStore.setCurrentResult(null)
+}
 
 watch(
   () => currentResult.value?.answer,
@@ -24,18 +35,20 @@ watch(
 </script>
 
 <template>
-  <div class="home">
+  <div class="home" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
     <AppSidebar
       :config="config"
       :creating="kbManager.creating.value"
       :building="kbManager.building.value"
       :uploading="kbManager.uploading.value"
       :kb-types="kbManager.kbTypes.value"
+      :collapsed="sidebarCollapsed"
       @create-kb="(name, description, kbType) => kbManager.handleCreate({ name, description, kb_type: kbType })"
       @delete-kb="kbManager.handleDelete"
       @build-kb="kbManager.handleBuild"
       @upload-kb="kbManager.handleUpload"
       @select-kb="kbManager.selectKb"
+      @toggle-collapse="toggleSidebar"
     />
 
     <div class="main-wrapper">
@@ -53,6 +66,7 @@ watch(
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"
         @toggle-context="showContext = true"
+        @back-home="backToHome"
       />
     </div>
 
@@ -70,6 +84,7 @@ watch(
   height: 100vh;
   overflow: hidden;
   background: #fff;
+  transition: padding 0.3s ease;
 }
 
 .main-wrapper {

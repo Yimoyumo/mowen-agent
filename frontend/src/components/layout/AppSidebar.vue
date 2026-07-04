@@ -9,6 +9,7 @@ interface Props {
   building: boolean
   uploading: boolean
   kbTypes: { value: string; label: string }[]
+  collapsed: boolean
 }
 
 const props = defineProps<Props>()
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   'build-kb': [kbId: string]
   'upload-kb': [kbId: string, file: File]
   'select-kb': [kbId: string]
+  'toggle-collapse': []
 }>()
 
 const splitLabel = computed(() =>
@@ -36,18 +38,23 @@ function handleCreate(name: string, description: string, kbType: string) {
 </script>
 
 <template>
-  <aside class="app-sidebar">
-    <div class="logo">
-      <span class="logo-icon">
-        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="40" height="40" rx="10" fill="#1d1d1d"/>
-          <path d="M12 28V12h4l8 10V12h4v16h-4l-8-10v10h-4z" fill="#fff"/>
-        </svg>
-      </span>
-      <span class="logo-text">墨问</span>
+  <aside class="app-sidebar" :class="{ collapsed }">
+    <div class="sidebar-header">
+      <div class="logo" :class="{ collapsed }">
+        <span class="logo-icon">
+          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="40" height="40" rx="10" fill="#1d1d1d"/>
+            <path d="M12 28V12h4l8 10V12h4v16h-4l-8-10v10h-4z" fill="#fff"/>
+          </svg>
+        </span>
+        <span v-if="!collapsed" class="logo-text">墨问</span>
+      </div>
+      <button class="collapse-btn" :title="collapsed ? '展开侧边栏' : '收起侧边栏'" @click="emit('toggle-collapse')">
+        <el-icon><Fold v-if="!collapsed" /><Expand v-else /></el-icon>
+      </button>
     </div>
 
-    <div class="sidebar-body">
+    <div v-if="!collapsed" class="sidebar-body">
       <el-card v-if="config" class="config-card" shadow="never">
         <template #header>
           <div class="card-header">
@@ -120,14 +127,36 @@ function handleCreate(name: string, description: string, kbType: string) {
   display: flex;
   flex-direction: column;
   padding: 16px;
+  transition: width 0.3s ease, min-width 0.3s ease, padding 0.3s ease;
+}
+
+.app-sidebar.collapsed {
+  width: 64px;
+  min-width: 64px;
+  padding: 16px 8px;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.app-sidebar.collapsed .sidebar-header {
+  flex-direction: column;
+  gap: 12px;
 }
 
 .logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 4px;
-  margin-bottom: 16px;
+  padding: 4px;
+}
+
+.logo.collapsed {
+  justify-content: center;
 }
 
 .logo-icon {
@@ -136,6 +165,7 @@ function handleCreate(name: string, description: string, kbType: string) {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .logo-icon svg {
@@ -146,6 +176,28 @@ function handleCreate(name: string, description: string, kbType: string) {
 .logo-text {
   font-size: 18px;
   font-weight: 600;
+  color: #1d1d1d;
+  white-space: nowrap;
+}
+
+.collapse-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
+  background: #fff;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.collapse-btn:hover {
+  background: #f5f5f5;
+  border-color: #1d1d1d;
   color: #1d1d1d;
 }
 

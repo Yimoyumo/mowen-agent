@@ -23,6 +23,7 @@ const emit = defineEmits<{
   selectExample: [question: string]
   selectKb: [kbId: string]
   toggleContext: []
+  backHome: []
 }>()
 
 const hasResult = computed(() => props.currentResult !== null)
@@ -39,6 +40,12 @@ defineExpose({ scrollToBottom })
 
 <template>
   <main class="chat-area">
+    <div v-if="hasResult" class="chat-topbar">
+      <button class="back-home-btn" @click="emit('backHome')">
+        <el-icon><Back /></el-icon>
+        <span>返回首页</span>
+      </button>
+    </div>
     <div ref="messagesRef" class="chat-messages">
       <HomeHero v-if="!hasResult" :kb-selected="kbSelected" @select="emit('selectExample', $event)" />
 
@@ -88,6 +95,34 @@ defineExpose({ scrollToBottom })
   display: flex;
   flex-direction: column;
   background: #fff;
+}
+
+.chat-topbar {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.back-home-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #e4e7ed;
+  background: #fff;
+  color: #606266;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-home-btn:hover {
+  border-color: #1d1d1d;
+  color: #1d1d1d;
+  background: #f5f5f5;
 }
 
 .chat-messages {
