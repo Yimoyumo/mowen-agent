@@ -61,22 +61,24 @@ function handleKeydown(e: KeyboardEvent) {
         </button>
       </div>
     </div>
-    <div v-if="knowledgeBases.length > 0" class="kb-selector">
-      <span class="kb-selector-label">知识库</span>
-      <div class="kb-selector-list">
-        <button
+    <div class="input-footer">
+      <el-select
+        v-if="knowledgeBases.length > 0"
+        :model-value="currentKbId"
+        placeholder="选择知识库"
+        size="small"
+        class="kb-select"
+        @change="emit('selectKb', $event as string)"
+      >
+        <el-option
           v-for="kb in knowledgeBases"
           :key="kb.id"
-          class="kb-selector-item"
-          :class="{ active: kb.id === currentKbId }"
-          :title="kb.name"
-          @click="emit('selectKb', kb.id)"
-        >
-          {{ kb.name }}
-        </button>
-      </div>
+          :label="kb.name"
+          :value="kb.id"
+        />
+      </el-select>
+      <span class="input-tip">Enter 发送 · Shift + Enter 换行</span>
     </div>
-    <p class="input-tip">按 Enter 发送，Shift + Enter 换行</p>
   </div>
 </template>
 
@@ -131,8 +133,8 @@ function handleKeydown(e: KeyboardEvent) {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  border: none;
-  background: #f5f5f5;
+  border: 1px solid #e4e7ed;
+  background: #fff;
   color: #606266;
   display: flex;
   align-items: center;
@@ -142,7 +144,14 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 .toolbar-btn:hover {
-  background: #e4e7ed;
+  background: #f5f5f5;
+  border-color: #1d1d1d;
+  color: #1d1d1d;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .send-btn {
@@ -181,67 +190,26 @@ function handleKeydown(e: KeyboardEvent) {
   padding: 0 4px;
 }
 
-.input-tip {
-  text-align: center;
-  font-size: 12px;
-  color: #c0c4cc;
-  margin: 8px 0 0;
-}
-
-.kb-selector {
+.input-footer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 0 4px;
+  justify-content: space-between;
   max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 10px auto 0;
+  padding: 0 4px;
 }
 
-.kb-selector-label {
-  font-size: 12px;
-  color: #909399;
-  font-weight: 500;
-  flex-shrink: 0;
+.input-tip {
+  font-size: 11px;
+  color: #c0c4cc;
 }
 
-.kb-selector-list {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  overflow-x: auto;
-  scrollbar-width: none;
+.kb-select {
+  width: 160px;
 }
 
-.kb-selector-list::-webkit-scrollbar {
-  display: none;
-}
-
-.kb-selector-item {
-  padding: 6px 12px;
+.kb-select :deep(.el-input__wrapper) {
   border-radius: 999px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #606266;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.kb-selector-item:hover {
-  border-color: #1d1d1d;
-  color: #1d1d1d;
-  background: #f5f5f5;
-}
-
-.kb-selector-item.active {
-  background: #1d1d1d;
-  border-color: #1d1d1d;
-  color: #fff;
+  box-shadow: 0 0 0 1px #e4e7ed inset;
 }
 </style>

@@ -112,22 +112,22 @@ function handleCreate(name: string, description: string, kbType: string) {
 
 <style scoped>
 .app-sidebar {
-  width: 260px;
-  min-width: 260px;
+  width: 300px;
+  min-width: 300px;
   height: 100vh;
-  background: #fff;
+  background: #fafafa;
   border-right: 1px solid #f0f0f0;
   display: flex;
   flex-direction: column;
-  padding: 16px 12px;
+  padding: 16px;
 }
 
 .logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  margin-bottom: 20px;
+  padding: 8px 4px;
+  margin-bottom: 16px;
 }
 
 .logo-icon {
@@ -154,13 +154,14 @@ function handleCreate(name: string, description: string, kbType: string) {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .config-card,
 .action-card {
   border: none;
-  background: #fafafa;
+  background: #fff;
+  border-radius: 12px;
 }
 
 .card-header {
@@ -169,23 +170,26 @@ function handleCreate(name: string, description: string, kbType: string) {
   gap: 8px;
   font-weight: 600;
   color: #303133;
+  font-size: 14px;
 }
 
 .config-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .config-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  padding: 8px 10px;
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid #f0f0f0;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.config-item:last-child {
+  border-bottom: none;
 }
 
 .config-label {
@@ -195,13 +199,8 @@ function handleCreate(name: string, description: string, kbType: string) {
 .config-value {
   color: #303133;
   font-weight: 500;
+  text-align: right;
+  max-width: 140px;
   word-break: break-all;
-}
-
-.config-item.full-width {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
 }
 </style>
