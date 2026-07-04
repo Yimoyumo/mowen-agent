@@ -47,6 +47,14 @@ export const useChatStore = defineStore('chat', () => {
     currentResult.value = result
   }
 
+  function removeHistory(index: number) {
+    const removed = history.value[index]
+    history.value.splice(index, 1)
+    if (currentResult.value === removed) {
+      currentResult.value = null
+    }
+  }
+
   function clearHistory() {
     history.value = []
     currentResult.value = null
@@ -59,6 +67,7 @@ export const useChatStore = defineStore('chat', () => {
     hasHistory,
     addResult,
     setCurrentResult,
+    removeHistory,
     clearHistory,
   }
 })

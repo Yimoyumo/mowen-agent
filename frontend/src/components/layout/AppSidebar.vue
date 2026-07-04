@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ConfigResponse } from '@/types/api'
+import type { ConfigResponse, AskResponse } from '@/types/api'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
+import ChatHistoryPanel from './ChatHistoryPanel.vue'
 
 interface Props {
   config: ConfigResponse | null
@@ -10,6 +11,8 @@ interface Props {
   uploading: boolean
   kbTypes: { value: string; label: string }[]
   collapsed: boolean
+  chatHistory: AskResponse[]
+  currentResult: AskResponse | null
 }
 
 const props = defineProps<Props>()
@@ -20,6 +23,9 @@ const emit = defineEmits<{
   'upload-kb': [kbId: string, file: File]
   'select-kb': [kbId: string]
   'toggle-collapse': []
+  'select-history': [item: AskResponse]
+  'remove-history': [index: number]
+  'clear-history': []
 }>()
 
 const splitLabel = computed(() =>
@@ -111,6 +117,16 @@ function handleCreate(name: string, description: string, kbType: string) {
           @build="emit('build-kb', $event)"
           @upload="(kbId: string, file: File) => emit('upload-kb', kbId, file)"
           @select="emit('select-kb', $event)"
+        />
+      </el-card>
+
+      <el-card class="action-card" shadow="never">
+        <ChatHistoryPanel
+          :history="chatHistory"
+          :current="currentResult"
+          @select="emit('select-history', $event)"
+          @remove="emit('remove-history', $event)"
+          @clear="emit('clear-history')"
         />
       </el-card>
     </div>

@@ -9,7 +9,7 @@ import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
 import { useChatStore } from '@/stores/chat'
 
 const { config, isReady } = useConfig()
-const { question, loading, streaming, currentResult, sendQuestion, setQuestion } = useChat()
+const { question, loading, streaming, currentResult, sendQuestion, setQuestion, selectHistory } = useChat()
 const kbManager = useKnowledgeBaseManager()
 const chatStore = useChatStore()
 
@@ -23,6 +23,14 @@ function toggleSidebar() {
 
 function backToHome() {
   chatStore.setCurrentResult(null)
+}
+
+function handleRemoveHistory(index: number) {
+  chatStore.removeHistory(index)
+}
+
+function handleClearHistory() {
+  chatStore.clearHistory()
 }
 
 watch(
@@ -43,12 +51,17 @@ watch(
       :uploading="kbManager.uploading.value"
       :kb-types="kbManager.kbTypes.value"
       :collapsed="sidebarCollapsed"
+      :chat-history="chatStore.history"
+      :current-result="currentResult"
       @create-kb="(name, description, kbType) => kbManager.handleCreate({ name, description, kb_type: kbType })"
       @delete-kb="kbManager.handleDelete"
       @build-kb="kbManager.handleBuild"
       @upload-kb="kbManager.handleUpload"
       @select-kb="kbManager.selectKb"
       @toggle-collapse="toggleSidebar"
+      @select-history="selectHistory"
+      @remove-history="handleRemoveHistory"
+      @clear-history="handleClearHistory"
     />
 
     <div class="main-wrapper">
