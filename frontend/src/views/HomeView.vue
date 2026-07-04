@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
-import AppHistory from '@/components/layout/AppHistory.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
-import ContextPanel from '@/components/chat/ContextPanel.vue'
 import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
 
 const { config, isReady } = useConfig()
-const { question, loading, streaming, currentResult, history, sendQuestion, selectHistory, setQuestion } = useChat()
+const { question, loading, streaming, currentResult, sendQuestion, setQuestion } = useChat()
 const kbManager = useKnowledgeBaseManager()
 
-const showContext = ref(false)
 const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
 
 watch(
@@ -40,13 +37,6 @@ watch(
     />
 
     <div class="main-wrapper">
-      <AppHistory
-        v-if="history.length > 0"
-        :history="history"
-        :current="currentResult"
-        @select="selectHistory"
-      />
-
       <ChatArea
         ref="chatAreaRef"
         v-model:question="question"
@@ -60,15 +50,8 @@ watch(
         @send="sendQuestion"
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"
-        @toggle-context="showContext = true"
       />
     </div>
-
-    <ContextPanel
-      :contexts="currentResult?.contexts ?? []"
-      :visible="showContext"
-      @close="showContext = false"
-    />
   </div>
 </template>
 

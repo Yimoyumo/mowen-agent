@@ -47,13 +47,6 @@ function handleCreate(name: string, description: string, kbType: string) {
       <span class="logo-text">墨问</span>
     </div>
 
-    <div class="nav-section">
-      <button class="nav-item active">
-        <el-icon><ChatDotRound /></el-icon>
-        <span>新建会话</span>
-      </button>
-    </div>
-
     <div class="sidebar-body">
       <el-card v-if="config" class="config-card" shadow="never">
         <template #header>
@@ -89,7 +82,7 @@ function handleCreate(name: string, description: string, kbType: string) {
             <span class="config-label">{{ splitLabel }}</span>
             <span class="config-value">{{ splitValue }}</span>
           </div>
-          <div class="config-item">
+          <div class="config-item full-width">
             <span class="config-label">查询扩写</span>
             <span class="config-value">
               <el-tag :type="config.enable_query_expansion ? 'success' : 'info'" size="small">
@@ -156,31 +149,6 @@ function handleCreate(name: string, description: string, kbType: string) {
   color: #1d1d1d;
 }
 
-.nav-section {
-  padding: 0 4px;
-  margin-bottom: 16px;
-}
-
-.nav-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #1d1d1d;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.nav-item:hover,
-.nav-item.active {
-  background: #f5f5f5;
-}
-
 .sidebar-body {
   flex: 1;
   overflow-y: auto;
@@ -192,10 +160,7 @@ function handleCreate(name: string, description: string, kbType: string) {
 .config-card,
 .action-card {
   border: none;
-}
-
-.action-card {
-  border: none;
+  background: #fafafa;
 }
 
 .card-header {
@@ -207,16 +172,20 @@ function handleCreate(name: string, description: string, kbType: string) {
 }
 
 .config-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
 .config-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
 }
 
 .config-label {
@@ -226,8 +195,13 @@ function handleCreate(name: string, description: string, kbType: string) {
 .config-value {
   color: #303133;
   font-weight: 500;
-  text-align: right;
-  max-width: 120px;
   word-break: break-all;
+}
+
+.config-item.full-width {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
 }
 </style>

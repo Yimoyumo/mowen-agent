@@ -22,7 +22,6 @@ const emit = defineEmits<{
   send: []
   selectExample: [question: string]
   selectKb: [kbId: string]
-  toggleContext: []
 }>()
 
 const hasResult = computed(() => props.currentResult !== null)
@@ -69,15 +68,6 @@ defineExpose({ scrollToBottom })
         @send="emit('send')"
         @select-kb="emit('selectKb', $event)"
       />
-      <button
-        v-if="hasResult"
-        class="context-toggle"
-        title="查看参考上下文"
-        @click="emit('toggleContext')"
-      >
-        <el-icon><Document /></el-icon>
-        <span>查看参考上下文</span>
-      </button>
     </div>
   </main>
 </template>
@@ -103,25 +93,5 @@ defineExpose({ scrollToBottom })
   align-items: center;
   gap: 8px;
   padding-bottom: 8px;
-}
-
-.context-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #606266;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.context-toggle:hover {
-  border-color: #1d1d1d;
-  color: #1d1d1d;
-  background: #f8f8f8;
 }
 </style>
