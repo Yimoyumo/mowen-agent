@@ -6,6 +6,8 @@ interface Props {
   loading: boolean
   disabled: boolean
   kbSelected: boolean
+  knowledgeBases: { id: string; name: string }[]
+  currentKbId: string | null
 }
 
 const props = defineProps<Props>()
@@ -13,6 +15,7 @@ const isDisabled = computed(() => props.disabled || !props.kbSelected)
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   send: []
+  selectKb: [kbId: string]
 }>()
 
 const hasContent = computed(() => props.modelValue.trim().length > 0)
@@ -55,6 +58,21 @@ function handleKeydown(e: KeyboardEvent) {
         >
           <el-icon v-if="loading" class="is-loading"><Loading /></el-icon>
           <span v-else class="send-text">发送</span>
+        </button>
+      </div>
+    </div>
+    <div v-if="knowledgeBases.length > 0" class="kb-selector">
+      <span class="kb-selector-label">知识库</span>
+      <div class="kb-selector-list">
+        <button
+          v-for="kb in knowledgeBases"
+          :key="kb.id"
+          class="kb-selector-item"
+          :class="{ active: kb.id === currentKbId }"
+          :title="kb.name"
+          @click="emit('selectKb', kb.id)"
+        >
+          {{ kb.name }}
         </button>
       </div>
     </div>
@@ -168,5 +186,62 @@ function handleKeydown(e: KeyboardEvent) {
   font-size: 12px;
   color: #c0c4cc;
   margin: 8px 0 0;
+}
+
+.kb-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 0 4px;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.kb-selector-label {
+  font-size: 12px;
+  color: #909399;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.kb-selector-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.kb-selector-list::-webkit-scrollbar {
+  display: none;
+}
+
+.kb-selector-item {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #e4e7ed;
+  background: #fff;
+  color: #606266;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kb-selector-item:hover {
+  border-color: #1d1d1d;
+  color: #1d1d1d;
+  background: #f5f5f5;
+}
+
+.kb-selector-item.active {
+  background: #1d1d1d;
+  border-color: #1d1d1d;
+  color: #fff;
 }
 </style>

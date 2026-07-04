@@ -54,9 +54,12 @@ watch(
         :streaming="streaming"
         :disabled="!isReady"
         :kb-selected="!!kbManager.store.currentKbId"
+        :knowledge-bases="kbManager.store.knowledgeBases"
+        :current-kb-id="kbManager.store.currentKbId"
         :current-result="currentResult"
         @send="sendQuestion"
         @select-example="setQuestion"
+        @select-kb="kbManager.selectKb"
         @toggle-context="showContext = true"
       />
     </div>

@@ -11,6 +11,8 @@ interface Props {
   streaming: boolean
   disabled: boolean
   kbSelected: boolean
+  knowledgeBases: { id: string; name: string }[]
+  currentKbId: string | null
   currentResult: AskResponse | null
 }
 
@@ -19,6 +21,7 @@ const emit = defineEmits<{
   'update:question': [value: string]
   send: []
   selectExample: [question: string]
+  selectKb: [kbId: string]
   toggleContext: []
 }>()
 
@@ -60,8 +63,11 @@ defineExpose({ scrollToBottom })
         :loading="loading"
         :disabled="disabled"
         :kb-selected="kbSelected"
+        :knowledge-bases="knowledgeBases"
+        :current-kb-id="currentKbId"
         @update:model-value="emit('update:question', $event)"
         @send="emit('send')"
+        @select-kb="emit('selectKb', $event)"
       />
       <button
         v-if="hasResult"
