@@ -8,6 +8,19 @@ export interface KnowledgeBase {
   kb_type: string
 }
 
+export interface KnowledgeBaseDocumentInfo {
+  file_name: string
+  chunks: number
+  chapters: string[]
+}
+
+export interface KnowledgeBaseDocumentsResponse {
+  kb_id: string
+  kb_name: string
+  total_chunks: number
+  documents: KnowledgeBaseDocumentInfo[]
+}
+
 export interface KnowledgeBaseType {
   value: string
   label: string

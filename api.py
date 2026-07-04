@@ -26,6 +26,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from rag.config import RAGConfig
+from collections import defaultdict
+
 from rag.knowledge_base import (
     KB_TYPES,
     create_knowledge_base,
@@ -42,6 +44,7 @@ from rag.pipeline import (
     build_vector_store_from_documents,
     append_documents_to_knowledge_base,
 )
+from rag.vectorstore_chroma import load_vector_store
 
 app = FastAPI(
     title="RAG 问答系统",
@@ -75,6 +78,19 @@ class KnowledgeBaseResponse(BaseModel):
     description: str
     created_at: str
     kb_type: str
+
+
+class KnowledgeBaseDocumentInfo(BaseModel):
+    file_name: str
+    chunks: int
+    chapters: list[str]
+
+
+class KnowledgeBaseDocumentsResponse(BaseModel):
+    kb_id: str
+    kb_name: str
+    total_chunks: int
+    documents: list[KnowledgeBaseDocumentInfo]
 
 
 class CreateKnowledgeBaseRequest(BaseModel):
@@ -234,6 +250,45 @@ def delete_kb_endpoint(kb_id: str) -> dict:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
     return {"status": "ok", "message": "知识库已删除"}
+
+
+@app.get("/knowledge-bases/{kb_id}/documents", response_model=KnowledgeBaseDocumentsResponse)
+def list_kb_documents_endpoint(kb_id: str) -> KnowledgeBaseDocumentsResponse:
+    """列出指定知识库内的文档信息（按 source 分组统计）。"""
+    kb = get_knowledge_base(kb_id)
+    if kb is None:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+
+    try:
+        vector_store = load_vector_store(kb.collection_name)
+        data = vector_store._collection.get(include=["metadatas"])
+        metadatas = data.get("metadatas") or []
+
+        grouped: dict[str, dict[str, object]] = defaultdict(lambda: {"chunks": 0, "chapters": set()})
+        for meta in metadatas:
+            source = meta.get("source") or "未知来源"
+            grouped[source]["chunks"] = int(grouped[source]["chunks"]) + 1  # type: ignore[assignment]
+            chapter = meta.get("chapter")
+            if chapter:
+                grouped[source]["chapters"].add(chapter)  # type: ignore[union-attr]
+
+        documents = [
+            KnowledgeBaseDocumentInfo(
+                file_name=Path(source).name,
+                chunks=info["chunks"],  # type: ignore[arg-type]
+                chapters=sorted(info["chapters"]),  # type: ignore[arg-type]
+            )
+            for source, info in sorted(grouped.items())
+        ]
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"获取文档信息失败: {exc}") from exc
+
+    return KnowledgeBaseDocumentsResponse(
+        kb_id=kb.id,
+        kb_name=kb.name,
+        total_chunks=sum(doc.chunks for doc in documents),
+        documents=documents,
+    )
 
 
 @app.post("/knowledge-bases/{kb_id}/build")

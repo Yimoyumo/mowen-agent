@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Plus, Upload, Refresh, Delete, Document } from '@element-plus/icons-vue'
+import { ref, computed, watch } from 'vue'
+import { Plus, Upload, Refresh, Delete, Document, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import type { AxiosError } from 'axios'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
+import { getKnowledgeBaseDocuments } from '@/api/chat'
+import type { KnowledgeBaseDocumentInfo } from '@/types/api'
 
 interface Props {
   creating: boolean
@@ -25,6 +29,9 @@ const newKbName = ref('')
 const newKbDesc = ref('')
 const newKbType = ref('general')
 const fileInput = ref<HTMLInputElement | null>(null)
+const expandedKbId = ref<string | null>(null)
+const kbDocs = ref<Record<string, KnowledgeBaseDocumentInfo[]>>({})
+const kbDocsLoading = ref<Record<string, boolean>>({})
 
 const canCreate = computed(() => newKbName.value.trim().length > 0 && !props.creating)
 
@@ -58,6 +65,40 @@ function handleFileChange(e: Event) {
 function kbTypeLabel(value: string) {
   return props.kbTypes.find((t) => t.value === value)?.label ?? value
 }
+
+function toggleDocs(kbId: string) {
+  if (expandedKbId.value === kbId) {
+    expandedKbId.value = null
+    return
+  }
+  expandedKbId.value = kbId
+  void loadDocs(kbId)
+}
+
+async function loadDocs(kbId: string) {
+  if (kbDocs.value[kbId] || kbDocsLoading.value[kbId]) return
+  kbDocsLoading.value[kbId] = true
+  try {
+    const res = await getKnowledgeBaseDocuments(kbId)
+    kbDocs.value[kbId] = res.documents
+  } catch (err) {
+    const axiosErr = err as AxiosError<{ detail?: string }>
+    ElMessage.error(axiosErr.response?.data?.detail || '加载文档信息失败')
+  } finally {
+    kbDocsLoading.value[kbId] = false
+  }
+}
+
+watch(
+  () => store.currentKbId,
+  (kbId) => {
+    if (kbId) {
+      expandedKbId.value = kbId
+      void loadDocs(kbId)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -85,52 +126,97 @@ function kbTypeLabel(value: string) {
       <div
         v-for="kb in store.knowledgeBases"
         :key="kb.id"
-        class="kb-item"
+        class="kb-item-wrapper"
         :class="{ active: kb.id === store.currentKbId }"
-        @click="emit('select', kb.id)"
       >
-        <div class="kb-item-main">
-          <el-icon class="kb-item-icon"><Document /></el-icon>
-          <div class="kb-item-info">
-            <div class="kb-item-name">{{ kb.name }}</div>
-            <div class="kb-item-meta">
-              <el-tag size="small" effect="plain">{{ kbTypeLabel(kb.kb_type) }}</el-tag>
-              <span v-if="kb.description" class="kb-item-desc">{{ kb.description }}</span>
+        <div
+          class="kb-item"
+          @click="emit('select', kb.id)"
+        >
+          <div class="kb-item-main">
+            <el-icon class="kb-item-icon"><Document /></el-icon>
+            <div class="kb-item-info">
+              <div class="kb-item-name">{{ kb.name }}</div>
+              <div class="kb-item-meta">
+                <el-tag size="small" effect="plain">{{ kbTypeLabel(kb.kb_type) }}</el-tag>
+                <span v-if="kb.description" class="kb-item-desc">{{ kb.description }}</span>
+              </div>
             </div>
+          </div>
+
+          <div class="kb-item-actions" @click.stop>
+            <el-tooltip content="查看文档" placement="top">
+              <el-button
+                :icon="expandedKbId === kb.id ? ArrowDown : ArrowRight"
+                size="small"
+                link
+                :class="{ active: expandedKbId === kb.id }"
+                @click="toggleDocs(kb.id)"
+              />
+            </el-tooltip>
+            <el-tooltip content="上传文档" placement="top">
+              <el-button
+                :icon="Upload"
+                size="small"
+                link
+                :loading="uploading && kb.id === store.currentKbId"
+                :disabled="uploading || building"
+                @click="triggerUpload(kb.id)"
+              />
+            </el-tooltip>
+            <el-tooltip content="重建向量库" placement="top">
+              <el-button
+                :icon="Refresh"
+                size="small"
+                link
+                :loading="building && kb.id === store.currentKbId"
+                :disabled="uploading || building"
+                @click="emit('build', kb.id)"
+              />
+            </el-tooltip>
+            <el-tooltip content="删除" placement="top">
+              <el-button
+                :icon="Delete"
+                size="small"
+                link
+                type="danger"
+                :disabled="uploading || building"
+                @click="emit('delete', kb.id)"
+              />
+            </el-tooltip>
           </div>
         </div>
 
-        <div class="kb-item-actions" @click.stop>
-          <el-tooltip content="上传文档" placement="top">
-            <el-button
-              :icon="Upload"
-              size="small"
-              link
-              :loading="uploading && kb.id === store.currentKbId"
-              :disabled="uploading || building"
-              @click="triggerUpload(kb.id)"
-            />
-          </el-tooltip>
-          <el-tooltip content="重建向量库" placement="top">
-            <el-button
-              :icon="Refresh"
-              size="small"
-              link
-              :loading="building && kb.id === store.currentKbId"
-              :disabled="uploading || building"
-              @click="emit('build', kb.id)"
-            />
-          </el-tooltip>
-          <el-tooltip content="删除" placement="top">
-            <el-button
-              :icon="Delete"
-              size="small"
-              link
-              type="danger"
-              :disabled="uploading || building"
-              @click="emit('delete', kb.id)"
-            />
-          </el-tooltip>
+        <div v-if="expandedKbId === kb.id" class="kb-docs" @click.stop>
+          <div v-if="kbDocsLoading[kb.id]" class="kb-docs-loading">
+            <el-skeleton :rows="2" animated />
+          </div>
+          <div v-else-if="!kbDocs[kb.id] || kbDocs[kb.id]!.length === 0" class="kb-docs-empty">
+            暂无文档
+          </div>
+          <div v-else class="kb-docs-list">
+            <div
+              v-for="doc in kbDocs[kb.id]!"
+              :key="doc.file_name"
+              class="kb-doc-item"
+            >
+              <div class="kb-doc-main">
+                <el-icon class="kb-doc-icon"><Document /></el-icon>
+                <span class="kb-doc-name" :title="doc.file_name">{{ doc.file_name }}</span>
+              </div>
+              <div class="kb-doc-meta">
+                <el-tag size="small" effect="plain" type="info">{{ doc.chunks }} 块</el-tag>
+                <el-tag
+                  v-if="doc.chapters.length > 0"
+                  size="small"
+                  effect="plain"
+                  type="success"
+                >
+                  {{ doc.chapters.length }} 章节
+                </el-tag>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -292,6 +378,76 @@ function kbTypeLabel(value: string) {
 
 .kb-item:hover .kb-item-actions {
   opacity: 1;
+}
+
+.kb-item-wrapper.active .kb-item-actions {
+  opacity: 1;
+}
+
+.kb-item-actions .el-button.active {
+  color: #1d1d1d;
+}
+
+.kb-docs {
+  margin: 0 4px 8px;
+  padding: 10px 12px;
+  background: #f8f8f8;
+  border-radius: 10px;
+  border: 1px solid #f0f0f0;
+}
+
+.kb-docs-loading,
+.kb-docs-empty {
+  padding: 8px 0;
+  color: #909399;
+  font-size: 13px;
+  text-align: center;
+}
+
+.kb-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kb-doc-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
+}
+
+.kb-doc-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.kb-doc-icon {
+  font-size: 16px;
+  color: #909399;
+  flex-shrink: 0;
+}
+
+.kb-doc-name {
+  font-size: 13px;
+  color: #303133;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kb-doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .hidden-file-input {

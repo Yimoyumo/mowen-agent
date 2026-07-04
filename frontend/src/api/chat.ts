@@ -6,6 +6,7 @@ import type {
   BuildResponse,
   HealthResponse,
   KnowledgeBase,
+  KnowledgeBaseDocumentsResponse,
   KnowledgeBaseType,
   StreamingAskCallbacks,
   CreateKnowledgeBaseRequest,
@@ -53,6 +54,13 @@ export async function deleteKnowledgeBase(kbId: string): Promise<BuildResponse> 
 
 export async function buildKnowledgeBase(kbId: string): Promise<BuildResponse> {
   const { data } = await apiClient.post<BuildResponse>(`/knowledge-bases/${kbId}/build`)
+  return data
+}
+
+export async function getKnowledgeBaseDocuments(
+  kbId: string,
+): Promise<KnowledgeBaseDocumentsResponse> {
+  const { data } = await apiClient.get<KnowledgeBaseDocumentsResponse>(`/knowledge-bases/${kbId}/documents`)
   return data
 }
 
