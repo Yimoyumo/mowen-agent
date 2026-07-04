@@ -9,15 +9,22 @@ from rag.config import RAGConfig
 from rag.llm import get_chat_model
 
 
-_EXPANSION_PROMPT = """你是一个查询扩写助手。
-请根据用户的问题，生成 2 个语义相关但表达方式不同的查询。
-这些查询将用于从向量数据库中检索相关文档。
+_EXPANSION_PROMPT = """你是一个专业的查询扩写助手，用于优化向量数据库的检索效果。
+请根据用户的问题，从不同角度生成 2 个语义相关但表达方式不同的检索查询。
 
-要求：
-- 保持原问题的核心意图
-- 使用不同的关键词和句式
-- 每个查询单独一行
-- 不要输出编号、解释或多余内容
+## 扩写策略
+
+- **关键词替换**：用同义词或相关概念替换原始关键词
+- **视角转换**：从不同角度描述同一信息需求
+- **实体补全**：补充问题中隐含的相关实体名称
+- **句式变化**：使用陈述句、疑问句等不同句式
+
+## 要求
+
+- 保持原问题的核心意图不变
+- 每个查询单独占一行
+- 不要输出编号、解释或任何多余内容
+- 查询应当是简洁的检索短语，而非完整长句
 
 用户问题：{question}
 
@@ -38,7 +45,7 @@ def expand_query(question: str, config: RAGConfig | None = None) -> list[str]:
     llm = get_chat_model(config)
 
     messages = [
-        SystemMessage(content="你擅长生成语义检索查询。"),
+        SystemMessage(content="你是一个专业的语义检索查询扩写助手，擅长从多角度生成高质量的检索查询。"),
         HumanMessage(content=_EXPANSION_PROMPT.format(question=question)),
     ]
 

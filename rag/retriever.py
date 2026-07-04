@@ -71,18 +71,35 @@ def _merge_with_ending_priority(
     top_k: int,
 ) -> list[Document]:
     """合并基础检索结果和结局章节检索结果，结局章节前置，去重。"""
+    return _deduplicate_docs(ending_docs + base_docs, top_k)
+
+
+def _deduplicate_docs(docs: list[Document], max_count: int) -> list[Document]:
+    """按内容前缀去重，保留最相关的文档。"""
     seen = set()
     merged: list[Document] = []
-
-    for doc in ending_docs + base_docs:
+    for doc in docs:
         key = doc.page_content[:200]
         if key not in seen:
             seen.add(key)
             merged.append(doc)
-        if len(merged) >= top_k:
+        if len(merged) >= max_count:
             break
-
     return merged
+
+
+def _multi_query_retrieve(
+    queries: list[str],
+    retriever,
+    top_k: int,
+) -> list[Document]:
+    """执行多查询检索，合并去重后返回 top_k 个文档。"""
+    all_docs: list[Document] = []
+    for query in queries:
+        docs = retriever.invoke(query)
+        all_docs.extend(docs)
+
+    return _deduplicate_docs(all_docs, top_k)
 
 
 def expand_and_retrieve(
@@ -90,7 +107,7 @@ def expand_and_retrieve(
     collection_name: str = "default",
     config: RAGConfig | None = None,
 ) -> list[Document]:
-    """先扩写查询，再用扩写后的查询执行一次检索。
+    """先扩写查询，再用扩写后的多个查询执行多查询检索。
 
     若扩写被禁用或失败（如 API 限流），则降级为直接使用原问题检索。
     检索完成后，对结局/最终类问题会做章节标题匹配的后处理重排。
@@ -131,14 +148,12 @@ def expand_and_retrieve(
 
     try:
         queries = expand_query(question, config)
-        # 取第一个扩写结果（通常语义最丰富）作为最终查询
-        expanded_query = queries[1] if len(queries) > 1 else queries[0]
-        print(f"扩写后查询: {expanded_query}")
+        print(f"查询扩写完成，共 {len(queries)} 个查询: {queries}")
     except Exception as exc:
         print(f"查询扩写失败，使用原问题检索: {exc}")
-        expanded_query = question
+        queries = [question]
 
-    return retriever.invoke(expanded_query)
+    return _multi_query_retrieve(queries, retriever, config.top_k)
 
 
 def get_retriever(collection_name: str = "default", config: RAGConfig | None = None):
