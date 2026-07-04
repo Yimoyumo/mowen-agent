@@ -38,9 +38,7 @@ export function useKnowledgeBaseManager() {
     try {
       const list = await getKnowledgeBases()
       store.setKnowledgeBases(list)
-      if (!store.currentKbId && list.length > 0) {
-        store.setCurrentKbId(list[0]!.id)
-      }
+      // 不自动选择知识库，由用户主动选择是否启用 RAG
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>
       ElMessage.error(axiosErr.response?.data?.detail || '加载知识库失败')
@@ -135,8 +133,8 @@ export function useKnowledgeBaseManager() {
     }
   }
 
-  function selectKb(kbId: string) {
-    store.setCurrentKbId(kbId)
+  function selectKb(kbId: string | null) {
+    store.setCurrentKbId(kbId && kbId.trim() ? kbId : null)
   }
 
   onMounted(() => {

@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import HomeHero from '@/components/home/HomeHero.vue'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
-import type { AskResponse, ConfigResponse } from '@/types/api'
+import ContextPanel from '@/components/chat/ContextPanel.vue'
+import type { ChatMessage as ChatMessageType, ConfigResponse } from '@/types/api'
 
 interface Props {
   question: string
   loading: boolean
   streaming: boolean
   disabled: boolean
-  kbSelected: boolean
+  messages: ChatMessageType[]
   knowledgeBases: { id: string; name: string }[]
   currentKbId: string | null
-  currentResult: AskResponse | null
   config: ConfigResponse | null
+  showContextPanel: boolean
+  contextMessages: ChatMessageType[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -23,20 +25,28 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'update:question': [value: string]
   send: []
+  stop: []
   selectExample: [question: string]
   selectKb: [kbId: string]
   toggleContext: []
   backHome: []
+  newConversation: []
 }>()
 
-const hasResult = computed(() => props.currentResult !== null)
+const hasMessages = computed(() => props.messages.length > 0)
 const messagesRef = ref<HTMLElement | null>(null)
 
 function scrollToBottom() {
-  if (messagesRef.value) {
-    messagesRef.value.scrollTop = messagesRef.value.scrollHeight
-  }
+  nextTick(() => {
+    if (messagesRef.value) {
+      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+    }
+  })
 }
+
+// 监听消息变化，自动滚动
+watch(() => props.messages.length, () => scrollToBottom())
+watch(() => props.messages.map(m => m.content).join(''), () => scrollToBottom())
 
 defineExpose({ scrollToBottom })
 </script>
@@ -44,92 +54,93 @@ defineExpose({ scrollToBottom })
 <template>
   <main class="chat-area">
     <div class="chat-topbar">
-      <button v-if="hasResult" class="back-home-btn" @click="emit('backHome')">
-        <el-icon><Back /></el-icon>
-        <span>返回首页</span>
-      </button>
-      <div v-else class="topbar-spacer" />
-      <el-popover v-if="config" placement="bottom-end" :width="320" trigger="click">
-        <template #reference>
-          <button class="config-btn">
-            <el-icon><Setting /></el-icon>
-            <span>配置</span>
-          </button>
-        </template>
-        <div class="config-popover">
-          <div class="config-popover-title">当前配置</div>
-          <div class="config-popover-grid">
-            <div class="config-popover-item">
-              <span class="config-popover-label">对话厂商</span>
-              <span class="config-popover-value">{{ config.chat_provider }}</span>
-            </div>
-            <div class="config-popover-item">
-              <span class="config-popover-label">对话模型</span>
-              <span class="config-popover-value">{{ config.chat_model }}</span>
-            </div>
-            <div class="config-popover-item">
-              <span class="config-popover-label">Embedding</span>
-              <span class="config-popover-value">{{ config.embedding_model }}</span>
-            </div>
-            <div class="config-popover-item">
-              <span class="config-popover-label">top_k</span>
-              <span class="config-popover-value">{{ config.top_k }}</span>
-            </div>
-            <div class="config-popover-item">
-              <span class="config-popover-label">切分方式</span>
-              <span class="config-popover-value">
-                {{ config.chapter_split ? '按章节切分' : '普通切分' }}
-              </span>
-            </div>
-            <div class="config-popover-item">
-              <span class="config-popover-label">查询扩写</span>
-              <el-tag :type="config.enable_query_expansion ? 'success' : 'info'" size="small">
-                {{ config.enable_query_expansion ? '开启' : '关闭' }}
-              </el-tag>
+      <div class="topbar-left">
+        <button v-if="hasMessages" class="topbar-btn" @click="emit('newConversation')">
+          <el-icon><Plus /></el-icon>
+          <span>新对话</span>
+        </button>
+      </div>
+      <div class="topbar-right">
+        <button
+          v-if="hasMessages && contextMessages.length > 0"
+          class="topbar-btn"
+          @click="emit('toggleContext')"
+        >
+          <el-icon><Document /></el-icon>
+          <span>参考上下文</span>
+        </button>
+        <el-popover v-if="config" placement="bottom-end" :width="320" trigger="click">
+          <template #reference>
+            <button class="topbar-btn">
+              <el-icon><Setting /></el-icon>
+              <span>配置</span>
+            </button>
+          </template>
+          <div class="config-popover">
+            <div class="config-popover-title">当前配置</div>
+            <div class="config-popover-grid">
+              <div class="config-popover-item">
+                <span class="config-popover-label">对话厂商</span>
+                <span class="config-popover-value">{{ config.chat_provider }}</span>
+              </div>
+              <div class="config-popover-item">
+                <span class="config-popover-label">对话模型</span>
+                <span class="config-popover-value">{{ config.chat_model }}</span>
+              </div>
+              <div class="config-popover-item">
+                <span class="config-popover-label">Embedding</span>
+                <span class="config-popover-value">{{ config.embedding_model }}</span>
+              </div>
+              <div class="config-popover-item">
+                <span class="config-popover-label">top_k</span>
+                <span class="config-popover-value">{{ config.top_k }}</span>
+              </div>
+              <div class="config-popover-item">
+                <span class="config-popover-label">查询扩写</span>
+                <el-tag :type="config.enable_query_expansion ? 'success' : 'info'" size="small">
+                  {{ config.enable_query_expansion ? '开启' : '关闭' }}
+                </el-tag>
+              </div>
             </div>
           </div>
-        </div>
-      </el-popover>
+        </el-popover>
+      </div>
     </div>
+
     <div ref="messagesRef" class="chat-messages">
-      <HomeHero v-if="!hasResult" :kb-selected="kbSelected" @select="emit('selectExample', $event)" />
+      <HomeHero v-if="!hasMessages" @select="emit('selectExample', $event)" />
 
       <template v-else>
         <ChatMessage
-          type="user"
-          title="用户问题"
-          :content="currentResult!.question"
-        />
-        <ChatMessage
-          type="ai"
-          title="模型回答"
-          :content="currentResult!.answer"
-          :streaming="streaming"
+          v-for="msg in messages"
+          :key="msg.id"
+          :type="msg.role"
+          :content="msg.content"
+          :streaming="streaming && msg.id === messages[messages.length - 1].id"
+          :contexts="msg.contexts"
+          :show-context="showContextPanel"
+          @toggle-context="emit('toggleContext')"
         />
       </template>
     </div>
 
-    <div class="chat-footer">
-      <ChatInput
-        :model-value="question"
-        :loading="loading"
-        :disabled="disabled"
-        :kb-selected="kbSelected"
-        :knowledge-bases="knowledgeBases"
-        :current-kb-id="currentKbId"
-        @update:model-value="emit('update:question', $event)"
-        @send="emit('send')"
-        @select-kb="emit('selectKb', $event)"
-      />
-      <button
-        v-if="hasResult && currentResult!.contexts.length > 0"
-        class="context-toggle"
-        @click="emit('toggleContext')"
-      >
-        <el-icon><Document /></el-icon>
-        <span>查看参考上下文 ({{ currentResult!.contexts.length }})</span>
-      </button>
-    </div>
+    <ChatInput
+      :model-value="question"
+      :loading="loading"
+      :disabled="disabled"
+      :knowledge-bases="knowledgeBases"
+      :current-kb-id="currentKbId"
+      @update:model-value="emit('update:question', $event)"
+      @send="emit('send')"
+      @stop="emit('stop')"
+      @select-kb="emit('selectKb', $event)"
+    />
+
+    <ContextPanel
+      :contexts="contextMessages.flatMap(m => m.contexts ?? [])"
+      :visible="showContextPanel"
+      @close="emit('toggleContext')"
+    />
   </main>
 </template>
 
@@ -151,11 +162,14 @@ defineExpose({ scrollToBottom })
   flex-shrink: 0;
 }
 
-.topbar-spacer {
-  flex: 1;
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.config-btn {
+.topbar-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -169,7 +183,7 @@ defineExpose({ scrollToBottom })
   transition: all 0.2s;
 }
 
-.config-btn:hover {
+.topbar-btn:hover {
   border-color: #1d1d1d;
   color: #1d1d1d;
   background: #f5f5f5;
@@ -210,57 +224,9 @@ defineExpose({ scrollToBottom })
   font-weight: 500;
 }
 
-.back-home-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #606266;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.back-home-btn:hover {
-  border-color: #1d1d1d;
-  color: #1d1d1d;
-  background: #f5f5f5;
-}
-
 .chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
-}
-
-.chat-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
-}
-
-.context-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #606266;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.context-toggle:hover {
-  border-color: #1d1d1d;
-  color: #1d1d1d;
-  background: #f5f5f5;
 }
 </style>

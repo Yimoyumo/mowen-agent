@@ -1,5 +1,31 @@
 /** API 类型定义 */
 
+// ==================== 通用对话类型 ====================
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  contexts?: string[]
+  createdAt: number
+}
+
+export interface Conversation {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  kbId?: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ChatRequest {
+  messages: { role: 'user' | 'assistant'; content: string }[]
+  kb_id?: string | null
+}
+
+// ==================== 知识库类型 ====================
+
 export interface KnowledgeBase {
   id: string
   name: string
@@ -26,6 +52,8 @@ export interface KnowledgeBaseType {
   label: string
 }
 
+// ==================== 旧版 RAG 类型（保留兼容） ====================
+
 export interface AskRequest {
   question: string
   kb_id?: string
@@ -36,6 +64,8 @@ export interface AskResponse {
   answer: string
   contexts: string[]
 }
+
+// ==================== 配置类型 ====================
 
 export interface ConfigResponse {
   chat_provider: string
@@ -59,13 +89,20 @@ export interface HealthResponse {
   status: string
 }
 
-/** 流式问答服务端事件类型 */
+// ==================== 流式事件类型 ====================
+
 export type StreamEvent =
-  | { type: 'question'; question: string }
   | { type: 'contexts'; contexts: string[] }
   | { type: 'token'; token: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
+
+export interface StreamingChatCallbacks {
+  onContexts?: (contexts: string[]) => void
+  onToken?: (token: string) => void
+  onDone?: () => void
+  onError?: (message: string) => void
+}
 
 export interface StreamingAskCallbacks {
   onQuestion?: (question: string) => void

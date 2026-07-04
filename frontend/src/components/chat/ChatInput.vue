@@ -5,27 +5,27 @@ interface Props {
   modelValue: string
   loading: boolean
   disabled: boolean
-  kbSelected: boolean
   knowledgeBases: { id: string; name: string }[]
   currentKbId: string | null
 }
 
 const props = defineProps<Props>()
-const isDisabled = computed(() => props.disabled || !props.kbSelected)
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   send: []
+  stop: []
   selectKb: [kbId: string]
 }>()
 
 const hasContent = computed(() => props.modelValue.trim().length > 0)
+const canSend = computed(() => hasContent.value && !props.loading && !props.disabled)
 
 function handleInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && hasContent.value && !isDisabled.value) {
+  if (e.key === 'Enter' && !e.shiftKey && canSend.value) {
     e.preventDefault()
     emit('send')
   }
@@ -39,45 +39,56 @@ function handleKeydown(e: KeyboardEvent) {
         :value="modelValue"
         rows="2"
         class="chat-textarea"
-        :placeholder="kbSelected ? '输入你的问题…' : '请先选择一个知识库后再提问'"
-        :disabled="isDisabled"
+        placeholder="输入你的问题…"
+        :disabled="disabled"
         @input="handleInput"
         @keydown="handleKeydown"
       />
       <div class="chat-toolbar">
         <div class="toolbar-left">
-          <button class="toolbar-btn" title="附件" :disabled="isDisabled">
-            <el-icon><DocumentAdd /></el-icon>
-          </button>
+          <el-select
+            v-if="knowledgeBases.length > 0"
+            :model-value="currentKbId"
+            placeholder="知识库（可选）"
+            size="small"
+            class="kb-select"
+            clearable
+            @change="(val: string) => emit('selectKb', val || '')"
+          >
+            <template #prefix>
+              <el-icon><Collection /></el-icon>
+            </template>
+            <el-option
+              v-for="kb in knowledgeBases"
+              :key="kb.id"
+              :label="kb.name"
+              :value="kb.id"
+            />
+          </el-select>
+          <span v-if="currentKbId" class="rag-badge">RAG 已启用</span>
         </div>
         <button
+          v-if="loading"
+          class="stop-btn"
+          @click="emit('stop')"
+        >
+          <el-icon><VideoPause /></el-icon>
+          <span>停止</span>
+        </button>
+        <button
+          v-else
           class="send-btn"
-          :class="{ active: hasContent && !loading && !isDisabled, loading: loading }"
-          :disabled="!hasContent || loading || isDisabled"
+          :class="{ active: canSend }"
+          :disabled="!canSend"
           @click="emit('send')"
         >
-          <el-icon v-if="loading" class="is-loading"><Loading /></el-icon>
+          <el-icon v-if="false" class="is-loading"><Loading /></el-icon>
           <span v-else class="send-text">发送</span>
         </button>
       </div>
     </div>
     <div class="input-footer">
-      <el-select
-        v-if="knowledgeBases.length > 0"
-        :model-value="currentKbId"
-        placeholder="选择知识库"
-        size="small"
-        class="kb-select"
-        @change="emit('selectKb', $event as string)"
-      >
-        <el-option
-          v-for="kb in knowledgeBases"
-          :key="kb.id"
-          :label="kb.name"
-          :value="kb.id"
-        />
-      </el-select>
-      <span class="input-tip">Enter 发送 · Shift + Enter 换行</span>
+      <span class="input-tip">Enter 发送 · Shift + Enter 换行{{ currentKbId ? ' · RAG 增强' : '' }}</span>
     </div>
   </div>
 </template>
@@ -86,7 +97,8 @@ function handleKeydown(e: KeyboardEvent) {
 .chat-input-wrapper {
   width: 100%;
   max-width: 800px;
-  padding: 16px 0 8px;
+  margin: 0 auto;
+  padding: 12px 24px 16px;
   background: #fff;
 }
 
@@ -127,31 +139,26 @@ function handleKeydown(e: KeyboardEvent) {
 .toolbar-left {
   display: flex;
   gap: 8px;
-}
-
-.toolbar-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #606266;
-  display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.toolbar-btn:hover {
-  background: #f5f5f5;
-  border-color: #1d1d1d;
-  color: #1d1d1d;
+.kb-select {
+  width: 180px;
 }
 
-.toolbar-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.kb-select :deep(.el-input__wrapper) {
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px #e4e7ed inset;
+}
+
+.rag-badge {
+  font-size: 11px;
+  color: #52c41a;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .send-btn {
@@ -181,35 +188,43 @@ function handleKeydown(e: KeyboardEvent) {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 
-.send-btn.loading {
-  background: #1d1d1d;
-  cursor: wait;
-}
-
 .send-text {
   padding: 0 4px;
+}
+
+.stop-btn {
+  min-width: 64px;
+  height: 36px;
+  border-radius: 18px;
+  border: none;
+  background: #1d1d1d;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.stop-btn:hover {
+  background: #000;
+  opacity: 0.85;
 }
 
 .input-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   max-width: 800px;
-  margin: 10px auto 0;
+  margin: 8px auto 0;
   padding: 0 4px;
 }
 
 .input-tip {
   font-size: 11px;
   color: #c0c4cc;
-}
-
-.kb-select {
-  width: 160px;
-}
-
-.kb-select :deep(.el-input__wrapper) {
-  border-radius: 999px;
-  box-shadow: 0 0 0 1px #e4e7ed inset;
 }
 </style>

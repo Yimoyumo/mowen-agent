@@ -36,12 +36,11 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
 
   function setKnowledgeBases(list: KnowledgeBase[]) {
     knowledgeBases.value = list
-    // 如果持久化的 kbId 不在列表中，重置为第一个
+    // 如果持久化的 kbId 不在列表中，清空
     if (currentKbId.value && !list.find((kb) => kb.id === currentKbId.value)) {
-      currentKbId.value = list[0]?.id ?? null
-    } else if (!currentKbId.value && list.length > 0) {
-      currentKbId.value = list[0]!.id
+      currentKbId.value = null
     }
+    // 不自动选择第一个，由用户主动选择
   }
 
   function addKnowledgeBase(kb: KnowledgeBase) {

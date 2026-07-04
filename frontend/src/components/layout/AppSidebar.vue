@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AskResponse } from '@/types/api'
+import type { Conversation } from '@/types/api'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import ChatHistoryPanel from './ChatHistoryPanel.vue'
 
@@ -9,8 +9,8 @@ interface Props {
   uploading: boolean
   kbTypes: { value: string; label: string }[]
   collapsed: boolean
-  chatHistory: AskResponse[]
-  currentResult: AskResponse | null
+  conversations: Conversation[]
+  currentConversationId: string | null
 }
 
 defineProps<Props>()
@@ -21,9 +21,10 @@ const emit = defineEmits<{
   'upload-kb': [kbId: string, file: File]
   'select-kb': [kbId: string]
   'toggle-collapse': []
-  'select-history': [item: AskResponse]
-  'remove-history': [index: number]
-  'clear-history': []
+  'select-conversation': [id: string]
+  'remove-conversation': [id: string]
+  'clear-conversations': []
+  'new-conversation': []
 }>()
 
 function handleCreate(name: string, description: string, kbType: string) {
@@ -65,11 +66,12 @@ function handleCreate(name: string, description: string, kbType: string) {
 
       <el-card class="action-card" shadow="never">
         <ChatHistoryPanel
-          :history="chatHistory"
-          :current="currentResult"
-          @select="emit('select-history', $event)"
-          @remove="emit('remove-history', $event)"
-          @clear="emit('clear-history')"
+          :conversations="conversations"
+          :current-id="currentConversationId"
+          @select="emit('select-conversation', $event)"
+          @remove="emit('remove-conversation', $event)"
+          @clear="emit('clear-conversations')"
+          @new-conversation="emit('new-conversation')"
         />
       </el-card>
     </div>

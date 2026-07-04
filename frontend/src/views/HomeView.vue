@@ -1,45 +1,54 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
-import ContextPanel from '@/components/chat/ContextPanel.vue'
 import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
 import { useChatStore } from '@/stores/chat'
 
 const { config, isReady } = useConfig()
-const { question, loading, streaming, currentResult, sendQuestion, setQuestion, selectHistory } = useChat()
+const {
+  question,
+  loading,
+  streaming,
+  messages,
+  currentConversation,
+  conversations,
+  sendMessage,
+  stopStreaming,
+  selectConversation,
+  deleteConversation,
+  createNewConversation,
+  clearAllConversations,
+  setQuestion,
+} = useChat()
 const kbManager = useKnowledgeBaseManager()
 const chatStore = useChatStore()
 
-const showContext = ref(false)
-const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
 const sidebarCollapsed = ref(false)
+const showContext = ref(false)
+
+// 获取有上下文的消息
+const contextMessages = computed(() =>
+  messages.value.filter(m => m.contexts && m.contexts.length > 0),
+)
 
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
-function backToHome() {
-  chatStore.setCurrentResult(null)
+function toggleContext() {
+  showContext.value = !showContext.value
 }
 
-function handleRemoveHistory(index: number) {
-  chatStore.removeHistory(index)
+function handleRemoveConversation(id: string) {
+  deleteConversation(id)
 }
 
-function handleClearHistory() {
-  chatStore.clearHistory()
+function handleClearConversations() {
+  clearAllConversations()
 }
-
-watch(
-  () => currentResult.value?.answer,
-  () => {
-    chatAreaRef.value?.scrollToBottom()
-  },
-  { flush: 'post' },
-)
 </script>
 
 <template>
@@ -50,44 +59,40 @@ watch(
       :uploading="kbManager.uploading.value"
       :kb-types="kbManager.kbTypes.value"
       :collapsed="sidebarCollapsed"
-      :chat-history="chatStore.history"
-      :current-result="currentResult"
+      :conversations="conversations"
+      :current-conversation-id="chatStore.currentId"
       @create-kb="(name, description, kbType) => kbManager.handleCreate({ name, description, kb_type: kbType })"
       @delete-kb="kbManager.handleDelete"
       @build-kb="kbManager.handleBuild"
       @upload-kb="kbManager.handleUpload"
       @select-kb="kbManager.selectKb"
       @toggle-collapse="toggleSidebar"
-      @select-history="selectHistory"
-      @remove-history="handleRemoveHistory"
-      @clear-history="handleClearHistory"
+      @select-conversation="selectConversation"
+      @remove-conversation="handleRemoveConversation"
+      @clear-conversations="handleClearConversations"
+      @new-conversation="createNewConversation"
     />
 
-    <div class="main-wrapper">
+    <div class="main-wrapper" :class="{ 'context-open': showContext }">
       <ChatArea
-        ref="chatAreaRef"
         v-model:question="question"
         :loading="loading"
         :streaming="streaming"
         :disabled="!isReady"
-        :kb-selected="!!kbManager.store.currentKbId"
+        :messages="messages"
         :knowledge-bases="kbManager.store.knowledgeBases"
         :current-kb-id="kbManager.store.currentKbId"
-        :current-result="currentResult"
         :config="config"
-        @send="sendQuestion"
+        :show-context-panel="showContext"
+        :context-messages="contextMessages"
+        @send="sendMessage"
+        @stop="stopStreaming"
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"
-        @toggle-context="showContext = true"
-        @back-home="backToHome"
+        @toggle-context="toggleContext"
+        @new-conversation="createNewConversation"
       />
     </div>
-
-    <ContextPanel
-      :contexts="currentResult?.contexts ?? []"
-      :visible="showContext"
-      @close="showContext = false"
-    />
   </div>
 </template>
 

@@ -44,12 +44,13 @@ from rag.pipeline import (
     build_vector_store_from_documents,
     append_documents_to_knowledge_base,
 )
+from rag.chat_chain import chat_stream as rag_chat_stream
 from rag.vectorstore_chroma import load_vector_store
 
 app = FastAPI(
-    title="RAG 问答系统",
-    description="基于智谱 AI + LangChain 的 RAG 问答 API",
-    version="0.2.0",
+    title="墨问 - AI 助手",
+    description="通用 AI 助手 API，支持多轮对话与可选 RAG 知识库增强",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -63,6 +64,12 @@ app.add_middleware(
 
 class AskRequest(BaseModel):
     question: str
+    kb_id: str | None = None
+
+
+class ChatRequest(BaseModel):
+    """通用对话请求。"""
+    messages: list[dict]
     kb_id: str | None = None
 
 
@@ -175,6 +182,50 @@ def ask_stream_endpoint(request: AskRequest) -> StreamingResponse:
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': f'问答失败: {exc}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/chat/stream")
+def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
+    """通用对话流式接口（可选 RAG 增强）。
+
+    请求体：
+        {
+            "messages": [
+                {"role": "user", "content": "你好"},
+                {"role": "assistant", "content": "你好！有什么可以帮你？"},
+                {"role": "user", "content": "介绍一下自己"}
+            ],
+            "kb_id": null  // 可选，提供时启用 RAG
+        }
+
+    响应（SSE）：
+        data: {"type": "contexts", "contexts": ["..."]}  (仅 RAG 模式)
+        data: {"type": "token", "token": "..."}
+        data: {"type": "done"}
+    """
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
+    last_msg = request.messages[-1]
+    if not last_msg.get("content", "").strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    async def event_generator():
+        try:
+            async for chunk in rag_chat_stream(request.messages, request.kb_id):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'对话失败: {exc}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

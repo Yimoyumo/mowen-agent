@@ -4,17 +4,11 @@ const emit = defineEmits<{
 }>()
 
 const examples = [
-  '洛烟小姐的结局是什么？',
-  '这本书的主要角色有哪些？',
-  '介绍一下小说的世界观',
-  '终章讲了什么？',
+  '你好，介绍一下你自己',
+  '帮我写一首关于春天的诗',
+  '解释一下什么是 RAG 技术',
+  '用 Python 实现快速排序',
 ]
-
-interface Props {
-  kbSelected: boolean
-}
-
-defineProps<Props>()
 </script>
 
 <template>
@@ -28,12 +22,8 @@ defineProps<Props>()
       </div>
       <h1 class="hero-title">墨问</h1>
     </div>
-    <p class="hero-subtitle">上传文档，提出问题，让 AI 帮你读懂每一页</p>
-    <p v-if="!kbSelected" class="hero-tip">
-      <el-icon><Info-Filled /></el-icon>
-      请先从左侧面板选择一个知识库
-    </p>
-    <div v-else class="example-tags">
+    <p class="hero-subtitle">你的智能 AI 助手 · 支持多轮对话与知识库增强</p>
+    <div class="example-tags">
       <span
         v-for="example in examples"
         :key="example"
@@ -99,10 +89,10 @@ defineProps<Props>()
 .example-tag {
   padding: 10px 18px;
   border-radius: 999px;
-  background: #fff;
   border: 1px solid #e4e7ed;
+  background: #fff;
   color: #606266;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -111,22 +101,5 @@ defineProps<Props>()
   border-color: #1d1d1d;
   color: #1d1d1d;
   background: #f5f5f5;
-}
-
-.hero-tip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  background: #fdf6ec;
-  border: 1px solid #f5dab1;
-  color: #e6a23c;
-  font-size: 14px;
-  margin: 0;
-}
-
-.hero-tip .el-icon {
-  font-size: 16px;
 }
 </style>

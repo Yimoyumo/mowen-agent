@@ -1,12 +1,16 @@
 <script setup lang="ts">
 interface Props {
-  type: 'user' | 'ai'
-  title: string
+  type: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  contexts?: string[]
+  showContext?: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+const emit = defineEmits<{
+  'toggleContext': []
+}>()
 
 function formatText(text: string): string {
   return text.replace(/\n/g, '<br>')
@@ -15,15 +19,15 @@ function formatText(text: string): string {
 
 <template>
   <div class="message" :class="[type === 'user' ? 'user-message' : 'ai-message']">
-    <div class="avatar" :class="{ ai: type === 'ai' }">
-      <svg v-if="type === 'ai'" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <div class="avatar" :class="{ ai: type === 'assistant' }">
+      <svg v-if="type === 'assistant'" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect width="40" height="40" rx="10" fill="#1d1d1d"/>
         <path d="M12 28V12h4l8 10V12h4v16h-4l-8-10v10h-4z" fill="#fff"/>
       </svg>
       <span v-else>我</span>
     </div>
     <div class="message-body">
-      <div class="message-title">{{ title }}</div>
+      <div class="message-title">{{ type === 'user' ? '你' : '墨问' }}</div>
       <div v-if="streaming && !content" class="typing-indicator">
         <span></span>
         <span></span>
@@ -31,6 +35,15 @@ function formatText(text: string): string {
       </div>
       <div class="message-content" v-html="formatText(content)"></div>
       <span v-if="streaming && content" class="streaming-cursor" />
+      <button
+        v-if="contexts && contexts.length > 0 && type === 'assistant'"
+        class="context-link"
+        :class="{ active: showContext }"
+        @click="emit('toggleContext')"
+      >
+        <el-icon><Document /></el-icon>
+        <span>参考上下文 ({{ contexts.length }})</span>
+      </button>
     </div>
   </div>
 </template>
@@ -101,70 +114,79 @@ function formatText(text: string): string {
 }
 
 .message-content {
-  line-height: 1.8;
   font-size: 15px;
+  line-height: 1.8;
   color: #1d1d1d;
   word-break: break-word;
 }
 
-.streaming-cursor {
-  display: inline-block;
-  width: 6px;
-  height: 18px;
-  background: #1d1d1d;
-  border-radius: 2px;
-  margin-left: 4px;
-  animation: blink 1s step-end infinite;
-  vertical-align: middle;
-}
-
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
 .typing-indicator {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
+  gap: 4px;
+  padding: 8px 0;
 }
 
 .typing-indicator span {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #909399;
-  animation: bounce 1.4s infinite ease-in-out both;
-}
-
-.typing-indicator span:nth-child(1) {
-  animation-delay: -0.32s;
+  background: #c0c4cc;
+  animation: typing 1.4s infinite ease-in-out;
 }
 
 .typing-indicator span:nth-child(2) {
-  animation-delay: -0.16s;
+  animation-delay: 0.2s;
 }
 
 .typing-indicator span:nth-child(3) {
-  animation-delay: 0s;
+  animation-delay: 0.4s;
 }
 
-@keyframes bounce {
-  0%,
-  80%,
-  100% {
-    transform: scale(0.6);
-    opacity: 0.5;
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
   }
-  40% {
-    transform: scale(1);
+  30% {
+    transform: translateY(-6px);
     opacity: 1;
   }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 16px;
+  background: #1d1d1d;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.context-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #e4e7ed;
+  background: #fff;
+  color: #909399;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.context-link:hover,
+.context-link.active {
+  border-color: #1d1d1d;
+  color: #1d1d1d;
+  background: #f5f5f5;
 }
 </style>
