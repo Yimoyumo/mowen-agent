@@ -17,7 +17,9 @@ interface Props {
   config: ConfigResponse | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  config: null,
+})
 const emit = defineEmits<{
   'update:question': [value: string]
   send: []
