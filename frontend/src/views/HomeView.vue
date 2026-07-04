@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
+import ContextPanel from '@/components/chat/ContextPanel.vue'
 import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
@@ -10,6 +11,7 @@ const { config, isReady } = useConfig()
 const { question, loading, streaming, currentResult, sendQuestion, setQuestion } = useChat()
 const kbManager = useKnowledgeBaseManager()
 
+const showContext = ref(false)
 const chatAreaRef = ref<InstanceType<typeof ChatArea> | null>(null)
 
 watch(
@@ -50,8 +52,15 @@ watch(
         @send="sendQuestion"
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"
+        @toggle-context="showContext = true"
       />
     </div>
+
+    <ContextPanel
+      :contexts="currentResult?.contexts ?? []"
+      :visible="showContext"
+      @close="showContext = false"
+    />
   </div>
 </template>
 
