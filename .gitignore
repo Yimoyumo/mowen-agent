@@ -1,0 +1,6 @@
+.env.zhipu
+config.json
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

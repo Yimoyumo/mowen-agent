@@ -1,0 +1,12 @@
+notebook
+ipykernel
+langchain>=0.3,<0.4
+langchain-core>=0.3,<0.4
+langchain-community>=0.3,<0.4
+langchain-text-splitters>=0.3,<0.4
+faiss-cpu
+zhipuai
+httpx
+httpx-sse
+pyjwt==2.8.0
+cachetools
