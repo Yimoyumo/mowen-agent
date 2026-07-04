@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
+import ContextPanel from '@/components/chat/ContextPanel.vue'
 import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
@@ -83,8 +84,6 @@ function handleClearConversations() {
         :knowledge-bases="kbManager.store.knowledgeBases"
         :current-kb-id="kbManager.store.currentKbId"
         :config="config"
-        :show-context-panel="showContext"
-        :context-messages="contextMessages"
         @send="sendMessage"
         @stop="stopStreaming"
         @select-example="setQuestion"
@@ -93,6 +92,12 @@ function handleClearConversations() {
         @new-conversation="createNewConversation"
       />
     </div>
+
+    <ContextPanel
+      :contexts="contextMessages.flatMap(m => m.contexts ?? [])"
+      :visible="showContext"
+      @close="toggleContext"
+    />
   </div>
 </template>
 
@@ -108,8 +113,10 @@ function handleClearConversations() {
 .main-wrapper {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 @media (max-width: 1024px) {

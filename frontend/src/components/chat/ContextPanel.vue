@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { renderMarkdown } from '@/utils/markdown'
+
 interface Props {
   contexts: string[]
   visible: boolean
@@ -8,10 +10,6 @@ defineProps<Props>()
 const emit = defineEmits<{
   close: []
 }>()
-
-function formatText(text: string): string {
-  return text.replace(/\n/g, '<br>')
-}
 </script>
 
 <template>
@@ -31,7 +29,7 @@ function formatText(text: string): string {
         <div v-if="contexts.length === 0" class="empty-context">暂无参考上下文</div>
         <div v-for="(ctx, idx) in contexts" :key="idx" class="context-item">
           <div class="context-index">{{ idx + 1 }}</div>
-          <div class="context-content" v-html="formatText(ctx)"></div>
+          <div class="context-content markdown-body" v-html="renderMarkdown(ctx)"></div>
         </div>
       </div>
     </aside>
@@ -42,12 +40,13 @@ function formatText(text: string): string {
 .context-panel {
   width: 420px;
   min-width: 420px;
-  height: 100vh;
+  height: 100%;
   background: #fff;
   border-left: 1px solid #f0f0f0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .context-header {
@@ -155,5 +154,85 @@ function formatText(text: string): string {
     width: 85vw;
     min-width: 280px;
   }
+}
+
+/* Markdown 渲染样式（与 ChatMessage 一致） */
+.markdown-body {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #606266;
+  word-break: break-word;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 8px;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4) {
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.markdown-body :deep(li) {
+  margin: 2px 0;
+}
+
+.markdown-body :deep(code) {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #f5f5f5;
+  font-size: 0.9em;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  color: #c7254e;
+}
+
+.markdown-body :deep(pre) {
+  margin: 0 0 8px;
+  padding: 12px;
+  border-radius: 6px;
+  background: #1d1d1d;
+  overflow-x: auto;
+}
+
+.markdown-body :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: #f8f8f2;
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 0 0 8px;
+  padding: 6px 12px;
+  border-left: 3px solid #e4e7ed;
+  color: #909399;
+}
+
+.markdown-body :deep(table) {
+  margin: 0 0 8px;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  padding: 4px 8px;
+  border: 1px solid #e4e7ed;
+}
+
+.markdown-body :deep(strong) {
+  font-weight: 600;
 }
 </style>

@@ -3,10 +3,9 @@ import { computed, ref, nextTick, watch } from 'vue'
 import HomeHero from '@/components/home/HomeHero.vue'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
-import ContextPanel from '@/components/chat/ContextPanel.vue'
 import type { ChatMessage as ChatMessageType, ConfigResponse } from '@/types/api'
 
-interface Props {
+  interface Props {
   question: string
   loading: boolean
   streaming: boolean
@@ -15,8 +14,6 @@ interface Props {
   knowledgeBases: { id: string; name: string }[]
   currentKbId: string | null
   config: ConfigResponse | null
-  showContextPanel: boolean
-  contextMessages: ChatMessageType[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -29,7 +26,6 @@ const emit = defineEmits<{
   selectExample: [question: string]
   selectKb: [kbId: string]
   toggleContext: []
-  backHome: []
   newConversation: []
 }>()
 
@@ -62,7 +58,7 @@ defineExpose({ scrollToBottom })
       </div>
       <div class="topbar-right">
         <button
-          v-if="hasMessages && contextMessages.length > 0"
+          v-if="hasMessages && messages.some(m => m.contexts && m.contexts.length > 0)"
           class="topbar-btn"
           @click="emit('toggleContext')"
         >
@@ -118,7 +114,6 @@ defineExpose({ scrollToBottom })
           :content="msg.content"
           :streaming="streaming && msg.id === messages[messages.length - 1].id"
           :contexts="msg.contexts"
-          :show-context="showContextPanel"
           @toggle-context="emit('toggleContext')"
         />
       </template>
@@ -135,12 +130,6 @@ defineExpose({ scrollToBottom })
       @stop="emit('stop')"
       @select-kb="emit('selectKb', $event)"
     />
-
-    <ContextPanel
-      :contexts="contextMessages.flatMap(m => m.contexts ?? [])"
-      :visible="showContextPanel"
-      @close="emit('toggleContext')"
-    />
   </main>
 </template>
 
@@ -148,9 +137,11 @@ defineExpose({ scrollToBottom })
 .chat-area {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #fff;
+  overflow: hidden;
 }
 
 .chat-topbar {

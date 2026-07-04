@@ -1,20 +1,17 @@
 <script setup lang="ts">
+import { renderMarkdown } from '@/utils/markdown'
+
 interface Props {
   type: 'user' | 'assistant'
   content: string
   streaming?: boolean
   contexts?: string[]
-  showContext?: boolean
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 const emit = defineEmits<{
   'toggleContext': []
 }>()
-
-function formatText(text: string): string {
-  return text.replace(/\n/g, '<br>')
-}
 </script>
 
 <template>
@@ -33,12 +30,11 @@ function formatText(text: string): string {
         <span></span>
         <span></span>
       </div>
-      <div class="message-content" v-html="formatText(content)"></div>
+      <div class="message-content markdown-body" v-html="renderMarkdown(content)"></div>
       <span v-if="streaming && content" class="streaming-cursor" />
       <button
         v-if="contexts && contexts.length > 0 && type === 'assistant'"
         class="context-link"
-        :class="{ active: showContext }"
         @click="emit('toggleContext')"
       >
         <el-icon><Document /></el-icon>
@@ -188,5 +184,139 @@ function formatText(text: string): string {
   border-color: #1d1d1d;
   color: #1d1d1d;
   background: #f5f5f5;
+}
+
+/* Markdown 渲染样式 */
+.markdown-body {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #1d1d1d;
+  word-break: break-word;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 12px;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 20px 0 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.markdown-body :deep(h1) { font-size: 1.5em; }
+.markdown-body :deep(h2) { font-size: 1.3em; }
+.markdown-body :deep(h3) { font-size: 1.15em; }
+.markdown-body :deep(h4) { font-size: 1em; }
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0 0 12px;
+  padding-left: 24px;
+}
+
+.markdown-body :deep(li) {
+  margin: 4px 0;
+}
+
+.markdown-body :deep(li > p) {
+  margin: 0;
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 0 0 12px;
+  padding: 8px 16px;
+  border-left: 4px solid #e4e7ed;
+  background: #fafafa;
+  color: #606266;
+}
+
+.markdown-body :deep(blockquote p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(code) {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f5f5f5;
+  font-size: 0.9em;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  color: #c7254e;
+}
+
+.markdown-body :deep(pre) {
+  margin: 0 0 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #1d1d1d;
+  overflow-x: auto;
+}
+
+.markdown-body :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: #f8f8f2;
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+
+.markdown-body :deep(table) {
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95em;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  padding: 8px 12px;
+  border: 1px solid #e4e7ed;
+  text-align: left;
+}
+
+.markdown-body :deep(th) {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.markdown-body :deep(tr:nth-child(2n)) {
+  background: #fafafa;
+}
+
+.markdown-body :deep(hr) {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid #e4e7ed;
+}
+
+.markdown-body :deep(a) {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-body :deep(strong) {
+  font-weight: 600;
+}
+
+.markdown-body :deep(em) {
+  font-style: italic;
+}
+
+.markdown-body :deep(img) {
+  max-width: 100%;
+  border-radius: 8px;
 }
 </style>

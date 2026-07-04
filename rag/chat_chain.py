@@ -118,10 +118,13 @@ def _build_messages(raw_messages: list[dict], system_prompt: str, context_text: 
 
     Args:
         raw_messages: [{"role": "user"/"assistant", "content": "..."}]
-        system_prompt: 系统提示词
-        context_text: RAG 检索到的上下文文本（为空则不加上下文段）
+        system_prompt: 系统提示词（RAG 模式下包含 {context} 占位符）
+        context_text: RAG 检索到的上下文文本（为空则不替换占位符）
     """
-    prompt = context_text.format(context=context_text) if context_text else system_prompt
+    if "{context}" in system_prompt and context_text:
+        prompt = system_prompt.replace("{context}", context_text)
+    else:
+        prompt = system_prompt
     messages = [SystemMessage(content=prompt)]
 
     for msg in raw_messages:
@@ -181,10 +184,9 @@ async def chat_stream(
             docs = expand_and_retrieve(last_user_msg, collection_name, config)
             context_texts = [doc.page_content for doc in docs]
 
-        # 用模板替换，context_text 作为占位内容
-        context_template = "{context}"
-
-    lc_messages = _build_messages(messages, system_prompt, context_template)
+    # 将检索到的上下文拼入系统提示词
+    context_text = "\n\n---\n\n".join(context_texts) if context_texts else "（未检索到相关上下文）"
+    lc_messages = _build_messages(messages, system_prompt, context_text)
 
     if context_texts:
         yield {"type": "contexts", "contexts": context_texts}
