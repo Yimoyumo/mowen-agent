@@ -19,7 +19,7 @@ def _build_kwargs(config: RAGConfig) -> dict:
         "model": config.chat_model,
         "temperature": config.temperature,
         "timeout": config.timeout,
-        "streaming": config.streaming,
+        "streaming": True,  # 始终启用流式，底层由 astream/ainvoke 控制实际行为
     }
     if config.max_tokens is not None:
         kwargs["max_tokens"] = config.max_tokens

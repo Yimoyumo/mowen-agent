@@ -15,6 +15,8 @@
     async for chunk in chat_stream(messages, kb_id="xxx"):
         ...
 """
+import asyncio
+import asyncio
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -211,6 +213,8 @@ async def chat_stream(
                 yield {"type": "reasoning", "token": reasoning}
             if content:
                 yield {"type": "token", "token": content}
+            # 让出控制权，确保 StreamingResponse 立即推送
+            await asyncio.sleep(0)
     else:
         # 非流式模式：一次性返回完整回答
         result = await llm.ainvoke(lc_messages)
