@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from app.models import ConfigResponse
-from rag.config import RAGConfig
+from server.config import RAGConfig
 
 router = APIRouter()
 

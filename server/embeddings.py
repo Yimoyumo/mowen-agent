@@ -5,7 +5,7 @@
 
 from langchain_community.embeddings import ZhipuAIEmbeddings
 
-from rag.config import RAGConfig
+from server.config import RAGConfig
 
 
 def get_embeddings(config: RAGConfig | None = None) -> ZhipuAIEmbeddings:

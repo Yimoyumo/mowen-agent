@@ -7,9 +7,9 @@ import re
 
 from langchain_core.documents import Document
 
-from rag.config import RAGConfig
-from rag.query_expansion import expand_query
-from rag.vectorstore_chroma import load_vector_store
+from server.config import RAGConfig
+from server.retrieval.query_expansion import expand_query
+from server.vectorstore_chroma import load_vector_store
 
 
 # 特殊查询类型：结局/最终类问题——避免扩写后语义发散，直接原问题检索

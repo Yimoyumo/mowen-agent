@@ -8,12 +8,12 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 
-from rag.config import RAGConfig
-from rag.knowledge_base import get_knowledge_base
-from rag.loader import load_directory
-from rag.splitter import split_documents_by_type
-from rag.vectorstore_chroma import create_vector_store, append_to_vector_store
-from rag.chain import get_rag_chain, get_rag_streaming_chain
+from server.config import RAGConfig
+from server.knowledge_base import get_knowledge_base
+from server.loader import load_directory
+from server.splitter import split_documents_by_type
+from server.vectorstore_chroma import create_vector_store, append_to_vector_store
+from server.legacy.chain import get_rag_chain, get_rag_streaming_chain
 
 
 def _resolve_kb_type(kb_id: str | None, config: RAGConfig | None = None) -> str:

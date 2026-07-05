@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from rag.config import RAGConfig
+from server.config import RAGConfig
 
 
 KB_META_FILE = "knowledge_bases.json"   # 知识库元数据持久化文件名

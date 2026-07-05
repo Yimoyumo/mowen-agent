@@ -5,8 +5,8 @@
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from rag.config import RAGConfig
-from rag.llm import get_chat_model
+from server.config import RAGConfig
+from server.llm import get_chat_model
 
 
 _EXPANSION_PROMPT = """你是一个专业的查询扩写助手，用于优化向量数据库的检索效果。

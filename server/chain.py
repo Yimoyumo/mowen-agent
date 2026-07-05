@@ -8,9 +8,9 @@ from langchain_classic.chains.combine_documents import create_stuff_documents_ch
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 
-from rag.config import RAGConfig
-from rag.llm import get_chat_model
-from rag.retriever import expand_and_retrieve
+from server.config import RAGConfig
+from server.llm import get_chat_model
+from server.retrieval import expand_and_retrieve
 
 
 _SYSTEM_PROMPT = """你是一个专业的智能文档问答助手。你的任务是基于检索到的参考上下文，准确、详尽地回答用户问题。
@@ -100,7 +100,7 @@ def _resolve_collection_name(kb_id: str | None, config: RAGConfig | None = None)
     if not kb_id:
         return "default"
 
-    from rag.knowledge_base import get_knowledge_base
+    from server.knowledge_base import get_knowledge_base
 
     kb = get_knowledge_base(kb_id, config)
     return kb.collection_name if kb else "default"

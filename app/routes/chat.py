@@ -7,8 +7,8 @@ from fastapi.responses import StreamingResponse
 
 from app.models import AskRequest, AskResponse, ChatRequest
 
-from rag.chat_chain import chat_stream as rag_chat_stream  # 通用对话链（多轮 + 可选 RAG）
-from rag.pipeline import ask, ask_stream                     # 旧版 RAG 问答
+from server.chat_chain import chat_stream as rag_chat_stream  # 通用对话链（多轮 + 可选 RAG）
+from server.legacy.pipeline import ask, ask_stream                     # 旧版 RAG 问答
 
 router = APIRouter()
 

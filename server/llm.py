@@ -9,7 +9,7 @@
 from langchain_community.chat_models import ChatZhipuAI
 from langchain_deepseek import ChatDeepSeek
 
-from rag.config import RAGConfig
+from server.config import RAGConfig
 
 # 厂商注册表
 _providers: dict[str, callable] = {}

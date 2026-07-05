@@ -50,6 +50,9 @@ class RAGConfig:
     # ---- 上下文窗口配置 ----
     max_context_tokens: int = 0               # 最大输入 token 数，0=不限制
 
+    # ---- Agent 配置 ----
+    tavily_api_key: str = ""                  # Tavily 联网搜索 API Key
+
     @classmethod
     def from_json(cls, path: str | Path = "config.json") -> "RAGConfig":
         """从 JSON 配置文件加载配置。
@@ -80,6 +83,7 @@ class RAGConfig:
         retrieval = data.get("retrieval", {})
         ctx = data.get("context", {})
         vs = data.get("vector_store", {})
+        agent = data.get("agent", {})
 
         return cls(
             # API Keys
@@ -116,6 +120,9 @@ class RAGConfig:
 
             # Context
             max_context_tokens=ctx.get("max_tokens", 0),
+
+            # Agent
+            tavily_api_key=agent.get("tavily_api_key", os.getenv("TAVILY_API_KEY", "")),
         )
 
     @classmethod
@@ -145,4 +152,5 @@ class RAGConfig:
             top_k=data.get("top_k", 4),
             enable_query_expansion=data.get("enable_query_expansion", False),
             max_context_tokens=data.get("max_context_tokens", 0),
+            tavily_api_key=data.get("tavily_api_key", os.getenv("TAVILY_API_KEY", "")),
         )
