@@ -1,0 +1,108 @@
+"""对话相关路由：通用对话 + 旧版 RAG 问答。"""
+
+import json
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.models import AskRequest, AskResponse, ChatRequest
+
+from rag.chat_chain import chat_stream as rag_chat_stream
+from rag.pipeline import ask, ask_stream
+
+router = APIRouter()
+
+
+@router.post("/chat/stream")
+def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
+    """通用对话流式接口（可选 RAG 增强）。
+
+    请求体：
+        {
+            "messages": [
+                {"role": "user", "content": "你好"},
+                {"role": "assistant", "content": "你好！有什么可以帮你？"},
+                {"role": "user", "content": "介绍一下自己"}
+            ],
+            "kb_id": null  // 可选，提供时启用 RAG
+        }
+
+    响应（SSE）：
+        data: {"type": "contexts", "contexts": ["..."]}  (仅 RAG 模式)
+        data: {"type": "token", "token": "..."}
+        data: {"type": "done"}
+    """
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
+    last_msg = request.messages[-1]
+    if not last_msg.get("content", "").strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    async def event_generator():
+        try:
+            async for chunk in rag_chat_stream(request.messages, request.kb_id):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'对话失败: {exc}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ==================== 旧版 RAG 问答接口（保留兼容） ====================
+
+
+@router.post("/ask", response_model=AskResponse)
+def ask_endpoint(request: AskRequest) -> AskResponse:
+    """RAG 问答接口。"""
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    if not request.kb_id:
+        raise HTTPException(status_code=400, detail="请先选择一个知识库")
+
+    try:
+        result = ask(request.question, request.kb_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"问答失败: {exc}") from exc
+
+    return AskResponse(
+        question=result["input"],
+        answer=result["answer"],
+        contexts=[doc.page_content for doc in result["context"]],
+    )
+
+
+@router.post("/ask/stream")
+def ask_stream_endpoint(request: AskRequest) -> StreamingResponse:
+    """流式 RAG 问答接口。"""
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    if not request.kb_id:
+        raise HTTPException(status_code=400, detail="请先选择一个知识库")
+
+    async def event_generator():
+        try:
+            async for chunk in ask_stream(request.question, request.kb_id):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'问答失败: {exc}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

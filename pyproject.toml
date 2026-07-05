@@ -1,7 +1,7 @@
 [project]
-name = "rag-agent-learning"
-version = "0.1.0"
-description = "基于智谱 AI 和 LangChain 的 RAG 问答学习项目"
+name = "mowen-ai-assistant"
+version = "0.3.0"
+description = "墨问 - 通用 AI 助手，支持多轮对话与可选 RAG 知识库增强"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

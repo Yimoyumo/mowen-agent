@@ -4,7 +4,7 @@ import { Plus, Upload, Refresh, Delete, Document, ArrowDown, ArrowRight } from '
 import { ElMessage } from 'element-plus'
 import type { AxiosError } from 'axios'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import { getKnowledgeBaseDocuments } from '@/api/chat'
+import { getKnowledgeBaseDocuments } from '@/api/knowledgeBaseApi'
 import type { KnowledgeBaseDocumentInfo } from '@/types/api'
 
 interface Props {

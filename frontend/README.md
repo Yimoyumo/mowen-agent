@@ -1,48 +1,43 @@
-# frontend
+# 墨问 - 前端
 
-This template should help get you started developing with Vue 3 in Vite.
+墨问 AI 助手前端，基于 Vue 3 + TypeScript + Vite + Element Plus。
 
-## Recommended IDE Setup
+## 功能
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- 多轮上下文对话（流式输出）
+- 可选 RAG 知识库增强
+- 多会话管理（创建/切换/删除）
+- Markdown 渲染（代码高亮、表格、引用等）
+- 知识库管理（创建/上传/重建/删除）
 
-## Recommended Browser Setup
-
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
+## 开发
 
 ```sh
 npm install
+npm run dev      # 启动开发服务器
+npm run build    # 构建生产版本
+npm run type-check  # 类型检查
 ```
 
-### Compile and Hot-Reload for Development
+## 目录结构
 
-```sh
-npm run dev
 ```
-
-### Type-Check, Compile and Minify for Production
-
-```sh
-npm run build
-```
-
-### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
+src/
+├── api/           API 调用层
+│   ├── config.ts      axios 实例配置
+│   ├── configApi.ts   配置与健康检查
+│   ├── knowledgeBaseApi.ts  知识库 CRUD
+│   ├── chat.ts        对话流式接口
+│   └── index.ts       统一导出
+├── assets/        全局样式
+├── components/    组件
+│   ├── chat/          对话区（消息、输入框、上下文面板）
+│   ├── home/          首页欢迎
+│   └── layout/        布局（侧边栏、知识库面板、会话列表）
+├── composables/   组合式函数（useChat, useConfig, useKnowledgeBase）
+├── router/        路由
+├── stores/        Pinia 状态管理（chat, knowledgeBase）
+├── types/         TypeScript 类型定义
+├── utils/         工具函数（markdown 渲染）
+└── views/         页面视图
 ```

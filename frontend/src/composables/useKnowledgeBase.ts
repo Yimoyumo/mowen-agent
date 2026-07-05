@@ -8,7 +8,7 @@ import {
   deleteKnowledgeBase,
   buildKnowledgeBase,
   uploadDocumentToKnowledgeBase,
-} from '@/api/chat'
+} from '@/api/knowledgeBaseApi'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import type { CreateKnowledgeBaseRequest, KnowledgeBaseType } from '@/types/api'
 

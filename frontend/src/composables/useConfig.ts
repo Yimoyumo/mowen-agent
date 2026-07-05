@@ -1,6 +1,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getConfig } from '@/api/chat'
+import { getConfig } from '@/api/configApi'
 import type { ConfigResponse } from '@/types/api'
 
 export function useConfig() {
