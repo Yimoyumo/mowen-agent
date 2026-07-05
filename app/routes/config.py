@@ -10,13 +10,13 @@ router = APIRouter()
 
 @router.get("/health")
 def health() -> dict:
-    """健康检查接口。"""
+    """健康检查接口，供前端确认后端是否在线。"""
     return {"status": "ok"}
 
 
 @router.get("/config", response_model=ConfigResponse)
 def config_endpoint() -> ConfigResponse:
-    """获取当前配置（只读）。"""
+    """获取当前系统配置（只读，从 config.json 加载）。"""
     cfg = RAGConfig.from_json()
     return ConfigResponse(
         chat_provider=cfg.chat_provider,

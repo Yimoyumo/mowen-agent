@@ -7,8 +7,8 @@ from fastapi.responses import StreamingResponse
 
 from app.models import AskRequest, AskResponse, ChatRequest
 
-from rag.chat_chain import chat_stream as rag_chat_stream
-from rag.pipeline import ask, ask_stream
+from rag.chat_chain import chat_stream as rag_chat_stream  # 通用对话链（多轮 + 可选 RAG）
+from rag.pipeline import ask, ask_stream                     # 旧版 RAG 问答
 
 router = APIRouter()
 
@@ -32,6 +32,7 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
         data: {"type": "token", "token": "..."}
         data: {"type": "done"}
     """
+    # 参数校验
     if not request.messages:
         raise HTTPException(status_code=400, detail="消息不能为空")
 
@@ -39,6 +40,7 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
     if not last_msg.get("content", "").strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
 
+    # SSE 流式生成器：逐块调用 rag_chat_stream 并以 data: 格式输出
     async def event_generator():
         try:
             async for chunk in rag_chat_stream(request.messages, request.kb_id):
@@ -50,9 +52,9 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",          # 禁用缓存，确保实时输出
+            "Connection": "keep-alive",            # 保持长连接
+            "X-Accel-Buffering": "no",             # 禁止 Nginx 缓冲（确保流式即时推送）
         },
     )
 
@@ -62,7 +64,7 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
 
 @router.post("/ask", response_model=AskResponse)
 def ask_endpoint(request: AskRequest) -> AskResponse:
-    """RAG 问答接口。"""
+    """RAG 问答接口（非流式，一次性返回完整结果）。"""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
 
@@ -83,7 +85,7 @@ def ask_endpoint(request: AskRequest) -> AskResponse:
 
 @router.post("/ask/stream")
 def ask_stream_endpoint(request: AskRequest) -> StreamingResponse:
-    """流式 RAG 问答接口。"""
+    """流式 RAG 问答接口（先返回上下文，再逐 token 输出回答）。"""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
 

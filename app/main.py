@@ -1,4 +1,8 @@
-"""FastAPI 应用实例与中间件配置。"""
+"""FastAPI 应用实例与中间件配置。
+
+本模块创建 FastAPI 应用实例，配置 CORS 跨域中间件，
+并注册所有路由模块。
+"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,15 +13,16 @@ app = FastAPI(
     version="0.3.0",
 )
 
+# CORS 跨域配置：允许前端（不同端口/域名）访问本 API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],       # 允许所有来源
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],       # 允许所有 HTTP 方法
+    allow_headers=["*"],       # 允许所有请求头
 )
 
-# 导入路由注册
+# 导入并注册路由模块
 from app.routes import chat, config, knowledge_bases  # noqa: E402
 
 app.include_router(chat.router, tags=["对话"])
