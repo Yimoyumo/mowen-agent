@@ -47,9 +47,17 @@ class RAGConfig:
     top_k: int = 4                             # 检索返回的文档数
     enable_query_expansion: bool = False       # 是否开启查询扩写
 
+    # ---- 上下文窗口配置 ----
+    max_context_tokens: int = 0               # 最大输入 token 数，0=不限制
+
     @classmethod
     def from_json(cls, path: str | Path = "config.json") -> "RAGConfig":
-        """从 JSON 配置文件加载配置。"""
+        """从 JSON 配置文件加载配置。
+
+        支持两种格式：
+        1. 模块化格式（推荐）：api_keys / model / generation / chunking / retrieval / context
+        2. 扁平格式（旧版兼容）：所有 key 平铺在一层
+        """
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"配置文件不存在: {path.absolute()}")
@@ -57,6 +65,62 @@ class RAGConfig:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # 检测格式：有 "model" 嵌套 key 为模块化格式，否则为扁平格式
+        if "model" in data:
+            return cls._from_nested(data)
+        return cls._from_flat(data)
+
+    @classmethod
+    def _from_nested(cls, data: dict) -> "RAGConfig":
+        """从模块化 JSON 结构加载配置。"""
+        api = data.get("api_keys", {})
+        model = data.get("model", {})
+        gen = data.get("generation", {})
+        chunk = data.get("chunking", {})
+        retrieval = data.get("retrieval", {})
+        ctx = data.get("context", {})
+        vs = data.get("vector_store", {})
+
+        return cls(
+            # API Keys
+            zhipu_api_key=api.get("zhipuai", os.getenv("ZHIPUAI_API_KEY", "")),
+            deepseek_api_key=api.get("deepseek", os.getenv("DEEPSEEK_API_KEY")),
+
+            # Model
+            chat_provider=model.get("provider", "zhipuai"),
+            chat_model=model.get("chat", "glm-4.6v-flashx"),
+            embedding_model=model.get("embedding", "embedding-3"),
+
+            # Generation
+            temperature=gen.get("temperature", 0.5),
+            max_tokens=gen.get("max_tokens"),
+            timeout=gen.get("timeout", 120),
+            streaming=gen.get("streaming", False),
+            enable_thinking=gen.get("thinking", False),
+            reasoning_effort=gen.get("reasoning_effort"),
+            top_p=gen.get("top_p"),
+            frequency_penalty=gen.get("frequency_penalty"),
+            presence_penalty=gen.get("presence_penalty"),
+
+            # Chunking
+            vector_store_dir=vs.get("dir", "./vectorstore"),
+            chunk_size=chunk.get("size", 500),
+            chunk_overlap=chunk.get("overlap", 50),
+            chapter_split=chunk.get("chapter_split", False),
+            chapter_chunk_threshold=chunk.get("chapter_threshold", 1500),
+            chapter_chunk_overlap=chunk.get("chapter_overlap", 200),
+
+            # Retrieval
+            top_k=retrieval.get("top_k", 4),
+            enable_query_expansion=retrieval.get("query_expansion", False),
+
+            # Context
+            max_context_tokens=ctx.get("max_tokens", 0),
+        )
+
+    @classmethod
+    def _from_flat(cls, data: dict) -> "RAGConfig":
+        """从扁平 JSON 结构加载配置（旧版兼容）。"""
         return cls(
             zhipu_api_key=data.get("zhipu_api_key", os.getenv("ZHIPUAI_API_KEY", "")),
             chat_model=data.get("chat_model", "glm-4.6v-flashx"),
@@ -80,4 +144,5 @@ class RAGConfig:
             chapter_chunk_overlap=data.get("chapter_chunk_overlap", 200),
             top_k=data.get("top_k", 4),
             enable_query_expansion=data.get("enable_query_expansion", False),
+            max_context_tokens=data.get("max_context_tokens", 0),
         )

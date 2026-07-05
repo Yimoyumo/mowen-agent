@@ -16,7 +16,6 @@
         ...
 """
 import asyncio
-import asyncio
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -144,6 +143,79 @@ def _build_messages(raw_messages: list[dict], system_prompt: str, context_text: 
     return messages
 
 
+def _estimate_tokens(text: str) -> int:
+    """估算文本的 token 数量（字符级启发式算法）。
+
+    中文字符约 1 token/字，英文/其他字符约 0.25 token/字。
+    对中日韩统一表意文字 (CJK Unified Ideographs, U+4E00-U+9FFF) 按 1 token 计，
+    其余按 4 字符 ≈ 1 token 估算。
+    """
+    chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    other_chars = len(text) - chinese_chars
+    return chinese_chars + max(1, other_chars // 4)
+
+
+def _trim_context(
+    messages: list,
+    max_tokens: int,
+) -> list:
+    """按 token 预算裁剪消息列表，从旧到新丢弃，确保不超限。
+
+    裁剪策略（按优先级保留）：
+    1. SystemMessage 始终保留
+    2. 最后一条用户消息（即当前问题）始终保留
+    3. 从旧到新丢弃其余消息，直到总 token 数 ≤ max_tokens
+
+    Args:
+        messages: LangChain 消息列表 [SystemMessage, HumanMessage, AIMessage, ...]
+        max_tokens: 最大允许的输入 token 数，<= 0 表示不限制
+
+    Returns:
+        裁剪后的消息列表
+    """
+    if max_tokens <= 0 or not messages:
+        return messages
+
+    # 分离 system 消息和对话消息
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    other_msgs = [m for m in messages if not isinstance(m, SystemMessage)]
+
+    if not other_msgs:
+        return messages
+
+    # 找到最后一条用户消息的索引
+    last_user_idx = -1
+    for i in range(len(other_msgs) - 1, -1, -1):
+        if isinstance(other_msgs[i], HumanMessage):
+            last_user_idx = i
+            break
+
+    # 计算 system 消息的 token
+    system_tokens = sum(_estimate_tokens(str(m.content)) for m in system_msgs)
+    budget = max_tokens - system_tokens
+
+    # 始终保留最后一条用户消息
+    last_user_msg = other_msgs[last_user_idx]
+    last_user_tokens = _estimate_tokens(str(last_user_msg.content))
+    budget -= last_user_tokens
+
+    if budget <= 0:
+        # 预算连 system + 最后一条用户消息都装不下，只保留两者
+        return system_msgs + [last_user_msg]
+
+    # 从最新到最旧累加，保留能装下的消息
+    kept: list = []
+    used = 0
+    for i in range(len(other_msgs) - 1, -1, -1):
+        tokens = _estimate_tokens(str(other_msgs[i].content))
+        if used + tokens > budget:
+            break
+        kept.insert(0, other_msgs[i])
+        used += tokens
+
+    return system_msgs + kept
+
+
 async def chat_stream(
     messages: list[dict],
     kb_id: str | None = None,
@@ -200,6 +272,9 @@ async def chat_stream(
     # 将检索到的上下文拼入系统提示词的 {context} 占位符
     context_text = "\n\n---\n\n".join(context_texts) if context_texts else "（未检索到相关上下文）"
     lc_messages = _build_messages(messages, system_prompt, context_text)
+
+    # 按上下文窗口限制裁剪消息，防止超出模型的 token 上限
+    lc_messages = _trim_context(lc_messages, config.max_context_tokens)
 
     # 先返回检索到的上下文（供前端展示"参考上下文"按钮）
     if context_texts:
