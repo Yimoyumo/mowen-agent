@@ -47,6 +47,7 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
                 request.messages, request.kb_id,
                 stream=request.stream,
                 show_reasoning=request.show_reasoning,
+                uploaded_files=request.uploaded_files or [],
             ):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except Exception as exc:

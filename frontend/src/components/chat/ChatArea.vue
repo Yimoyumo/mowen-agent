@@ -25,7 +25,7 @@ const emit = defineEmits<{
   'update:question': [value: string]
   'update:streamEnabled': [value: boolean]
   'update:showReasoning': [value: boolean]
-  send: []
+  send: [uploadedFiles: { token: string; filename: string }[]]
   stop: []
   selectExample: [question: string]
   selectKb: [kbId: string]
@@ -140,6 +140,7 @@ defineExpose({ scrollToBottom })
           :streaming="streaming && msg.id === messages[messages.length - 1].id"
           :contexts="msg.contexts"
           :reasoning="msg.reasoning"
+          :segments="msg.segments"
           @toggle-context="emit('toggleContext')"
         />
       </template>
@@ -152,7 +153,7 @@ defineExpose({ scrollToBottom })
       :knowledge-bases="knowledgeBases"
       :current-kb-id="currentKbId"
       @update:model-value="emit('update:question', $event)"
-      @send="emit('send')"
+      @send="(files: any) => emit('send', files)"
       @stop="emit('stop')"
       @select-kb="emit('selectKb', $event)"
     />

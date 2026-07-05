@@ -14,8 +14,9 @@ app = FastAPI(
 )
 
 # 导入并注册路由模块
-from app.routes import chat, config, knowledge_bases  # noqa: E402
+from app.routes import chat, config, files, knowledge_bases  # noqa: E402
 
 app.include_router(chat.router, tags=["对话"])
 app.include_router(config.router, tags=["配置"])
+app.include_router(files.router, tags=["文件"])
 app.include_router(knowledge_bases.router, tags=["知识库"])

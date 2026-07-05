@@ -88,7 +88,7 @@ function handleClearConversations() {
         :knowledge-bases="kbManager.store.knowledgeBases"
         :current-kb-id="kbManager.store.currentKbId"
         :config="config"
-        @send="sendMessage"
+        @send="(files: any) => sendMessage(undefined, files)"
         @stop="stopStreaming"
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"

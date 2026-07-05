@@ -20,7 +20,11 @@ export function chatStream(
   messages: ChatRequest['messages'],
   kbId: string | null | undefined,
   callbacks: StreamingChatCallbacks,
-  options?: { stream?: boolean; showReasoning?: boolean },
+  options?: {
+    stream?: boolean
+    showReasoning?: boolean
+    uploadedFiles?: { token: string; filename: string }[]
+  },
 ): () => void {
   const abortController = new AbortController()
 
@@ -29,6 +33,7 @@ export function chatStream(
     kb_id: kbId ?? null,
     stream: options?.stream ?? true,
     show_reasoning: options?.showReasoning ?? false,
+    uploaded_files: options?.uploadedFiles ?? undefined,
   }
 
   fetch(`${apiClient.defaults.baseURL}/chat/stream`, {
@@ -74,12 +79,16 @@ export function chatStream(
               | { type: 'contexts'; contexts: string[] }
               | { type: 'reasoning'; token: string }
               | { type: 'token'; token: string }
+              | { type: 'tool_start'; tool: string; input: string }
+              | { type: 'tool_end'; tool: string; output: string }
               | { type: 'done' }
               | { type: 'error'; message: string }
 
             if (event.type === 'contexts') callbacks.onContexts?.(event.contexts)
             else if (event.type === 'reasoning') callbacks.onReasoning?.(event.token)
             else if (event.type === 'token') callbacks.onToken?.(event.token)
+            else if (event.type === 'tool_start') callbacks.onToolStart?.(event.tool, event.input)
+            else if (event.type === 'tool_end') callbacks.onToolEnd?.(event.tool, event.output)
             else if (event.type === 'done') callbacks.onDone?.()
             else if (event.type === 'error') callbacks.onError?.(event.message)
           } catch {

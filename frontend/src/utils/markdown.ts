@@ -19,6 +19,7 @@ export function renderMarkdown(text: string): string {
   if (!text) return ''
   const rawHtml = marked.parse(text, { async: false }) as string
   return DOMPurify.sanitize(rawHtml, {
-    ADD_ATTR: ['target'],
+    ADD_ATTR: ['target', 'src', 'alt', 'title'],
+    ADD_TAGS: ['img'],
   })
 }

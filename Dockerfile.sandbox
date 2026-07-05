@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+# pip 清华镜像源（先配 pip 源，再装包才快）
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+
+# 换成中国镜像源加速
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    unzip zip tar gzip xz-utils bzip2 \
+    curl wget ca-certificates \
+    git build-essential \
+    jq file tree \
+    vim-tiny nano less \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 预装 Python 常用包（用清华源）
+RUN pip install --no-cache-dir httpx html2text beautifulsoup4 lxml pandas matplotlib requests
+
+# git 全局配置：提高大仓库性能
+RUN git config --global http.postBuffer 524288000 && \
+    git config --global core.compression 0
+
+WORKDIR /workspace

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
+import type { MessageSegment } from '@/types/api'
 
 interface Props {
   type: 'user' | 'assistant'
@@ -8,6 +9,7 @@ interface Props {
   streaming?: boolean
   contexts?: string[]
   reasoning?: string
+  segments?: MessageSegment[]
 }
 
 const props = defineProps<Props>()
@@ -15,7 +17,48 @@ const emit = defineEmits<{
   'toggleContext': []
 }>()
 
-const showReasoning = ref(true)   // 推理过程默认展开
+const showReasoning = ref(true)
+const expandedTools = ref<Set<number>>(new Set())
+
+const toolLabels: Record<string, string> = {
+  sandbox_run: '执行命令',
+  sandbox_write_file: '写入文件',
+  sandbox_read_file: '读取文件',
+  sandbox_list_files: '查看目录',
+  sandbox_export_file: '导出文件',
+  search_knowledge_base: '搜索知识库',
+  search_web: '联网搜索',
+}
+
+function toolLabel(name: string) {
+  return toolLabels[name] ?? name
+}
+
+function toolEmoji(name: string) {
+  if (name === 'sandbox_run') return '⚡'
+  if (name === 'search_web') return '🌐'
+  if (name === 'search_knowledge_base') return '📚'
+  return '🔧'
+}
+
+function toggleTool(i: number) {
+  if (expandedTools.value.has(i)) expandedTools.value.delete(i)
+  else expandedTools.value.add(i)
+}
+
+// segments 中的全局索引（只给 tool segment 记数）
+function toolGlobalIndex(segIndex: number) {
+  if (!props.segments) return 0
+  let count = 0
+  for (let i = 0; i < segIndex; i++) {
+    if (props.segments[i].type === 'tool') count++
+  }
+  return count
+}
+
+const hasRunningTool = computed(() =>
+  props.segments?.some(s => s.type === 'tool' && s.status === 'running')
+)
 </script>
 
 <template>
@@ -40,13 +83,52 @@ const showReasoning = ref(true)   // 推理过程默认展开
         <div v-if="showReasoning" class="reasoning-content markdown-body" v-html="renderMarkdown(reasoning)"></div>
       </div>
 
-      <div v-if="streaming && !content && !reasoning" class="typing-indicator">
+      <!-- 交错渲染文本和工具调用 -->
+      <template v-if="segments && segments.length > 0">
+        <template v-for="(seg, i) in segments" :key="i">
+          <!-- 文本片段 -->
+          <div v-if="seg.type === 'text'" class="message-content markdown-body" v-html="renderMarkdown(seg.content)"></div>
+
+          <!-- 工具调用片段 -->
+          <div
+            v-else-if="seg.type === 'tool'"
+            class="tool-call-item"
+            :class="{ running: seg.status === 'running' }"
+          >
+            <button class="tool-call-header" @click="toggleTool(toolGlobalIndex(i))">
+              <el-icon class="tool-icon" :class="{ expanded: expandedTools.has(toolGlobalIndex(i)) }"><ArrowRight /></el-icon>
+              <span class="tool-icon-icon">{{ toolEmoji(seg.tool) }}</span>
+              <span class="tool-name">{{ toolLabel(seg.tool) }}</span>
+              <span v-if="seg.status === 'running'" class="tool-status running">
+                <span class="dot-flashing"></span>执行中
+              </span>
+              <span v-else class="tool-status done">✓ 完成</span>
+            </button>
+            <div v-if="expandedTools.has(toolGlobalIndex(i))" class="tool-call-detail">
+              <div v-if="seg.input" class="tool-input">
+                <span class="detail-label">输入:</span>
+                <pre>{{ seg.input }}</pre>
+              </div>
+              <div v-if="seg.output" class="tool-output">
+                <span class="detail-label">输出:</span>
+                <pre>{{ seg.output }}</pre>
+              </div>
+            </div>
+          </div>
+        </template>
+      </template>
+
+      <!-- 没有 segments 时走老逻辑（向后兼容） -->
+      <template v-else>
+        <div class="message-content markdown-body" v-html="renderMarkdown(content)"></div>
+      </template>
+
+      <span v-if="streaming && content" class="streaming-cursor" />
+      <div v-if="streaming && !content && !reasoning && !hasRunningTool" class="typing-indicator">
         <span></span>
         <span></span>
         <span></span>
       </div>
-      <div class="message-content markdown-body" v-html="renderMarkdown(content)"></div>
-      <span v-if="streaming && content" class="streaming-cursor" />
       <button
         v-if="contexts && contexts.length > 0 && type === 'assistant'"
         class="context-link"
@@ -249,6 +331,121 @@ const showReasoning = ref(true)   // 推理过程默认展开
   border-color: #1d1d1d;
   color: #1d1d1d;
   background: #f5f5f5;
+}
+
+/* 工具调用状态 */
+.tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.tool-call-item {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fafafa;
+}
+
+.tool-call-item.running {
+  border-color: #c0c4cc;
+  background: #f5f7fa;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #606266;
+  width: 100%;
+  text-align: left;
+}
+
+.tool-call-header:hover {
+  background: #f0f0f0;
+}
+
+.tool-icon {
+  transition: transform 0.2s;
+  font-size: 12px;
+  color: #909399;
+}
+
+.tool-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.tool-icon-icon {
+  font-size: 14px;
+}
+
+.tool-name {
+  font-weight: 500;
+  flex: 1;
+}
+
+.tool-status {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-status.running {
+  color: #409eff;
+}
+
+.tool-status.done {
+  color: #67c23a;
+}
+
+.dot-flashing {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #409eff;
+  animation: dotFlashing 0.8s infinite alternate;
+}
+
+@keyframes dotFlashing {
+  to { opacity: 0.3; }
+}
+
+.tool-call-detail {
+  padding: 8px 10px;
+  border-top: 1px solid #e4e7ed;
+  font-size: 12px;
+}
+
+.tool-input,
+.tool-output {
+  margin-bottom: 6px;
+}
+
+.tool-input pre,
+.tool-output pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: #fff;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #333;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.detail-label {
+  color: #909399;
+  font-weight: 500;
 }
 
 /* Markdown 渲染样式 */

@@ -49,7 +49,7 @@ export function useChat() {
       }))
   }
 
-  async function sendMessage(text?: string) {
+  async function sendMessage(text?: string, uploadedFiles?: { token: string; filename: string }[]) {
     const q = (text ?? question.value).trim()
     if (!q) {
       ElMessage.warning('请输入问题')
@@ -70,11 +70,12 @@ export function useChat() {
     streaming.value = true
     question.value = ''
 
-    // 添加 assistant 占位消息
+    // 添加 assistant 占位消息（带空 segments）
     const assistantMsg = store.addMessage(conv.id, {
       role: 'assistant',
       content: '',
       contexts: [],
+      segments: [],
     })
 
     // 构建请求消息（包含刚添加的用户消息，不含占位的空 assistant）
@@ -97,10 +98,43 @@ export function useChat() {
             })
           }
         },
+        onToolStart: (tool, input) => {
+          const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          if (msg) {
+            const segs = [...(msg.segments ?? [])]
+            // 推入一个新的 tool segment
+            segs.push({ type: 'tool', tool, input, status: 'running' })
+            store.updateMessage(conv.id, assistantMsg.id, { segments: segs })
+          }
+        },
+        onToolEnd: (tool, output) => {
+          const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          if (msg) {
+            const segs = [...(msg.segments ?? [])]
+            // 从后往前找第一个同名且 running 的 tool segment
+            for (let i = segs.length - 1; i >= 0; i--) {
+              if (segs[i].type === 'tool' && segs[i].tool === tool && segs[i].status === 'running') {
+                segs[i] = { ...segs[i], type: 'tool', tool, output, status: 'done' }
+                break
+              }
+            }
+            store.updateMessage(conv.id, assistantMsg.id, { segments: segs })
+          }
+        },
         onToken: (token) => {
           const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
           if (msg) {
-            store.updateMessage(conv.id, assistantMsg.id, { content: msg.content + token })
+            // 追加到 content（向后兼容）
+            const newContent = msg.content + token
+            // 同步更新 segments：追加到最后一个 text segment，或创建新的
+            const segs = [...(msg.segments ?? [])]
+            const last = segs[segs.length - 1]
+            if (last && last.type === 'text') {
+              segs[segs.length - 1] = { type: 'text', content: last.content + token }
+            } else {
+              segs.push({ type: 'text', content: token })
+            }
+            store.updateMessage(conv.id, assistantMsg.id, { content: newContent, segments: segs })
           }
         },
         onDone: () => {
@@ -124,6 +158,7 @@ export function useChat() {
       {
         stream: streamEnabled.value,
         showReasoning: showReasoning.value,
+        uploadedFiles: uploadedFiles ?? undefined,
       },
     )
 

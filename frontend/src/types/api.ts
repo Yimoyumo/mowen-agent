@@ -6,10 +6,15 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  reasoning?: string           // 模型推理过程（DeepSeek reasoner 等模型支持）
+  reasoning?: string           // 模型推理过程
   contexts?: string[]
+  segments?: MessageSegment[]  // 交错文本和工具调用片段
   createdAt: number
 }
+
+export type MessageSegment =
+  | { type: 'text'; content: string }
+  | { type: 'tool'; tool: string; input?: string; output?: string; status: 'running' | 'done' }
 
 export interface Conversation {
   id: string
@@ -25,6 +30,7 @@ export interface ChatRequest {
   kb_id?: string | null
   stream?: boolean             // 是否流式输出，默认 true
   show_reasoning?: boolean     // 是否返回推理过程，默认 false
+  uploaded_files?: { token: string; filename: string }[]  // 上传的文件
 }
 
 // ==================== 知识库类型 ====================
@@ -98,6 +104,8 @@ export type StreamEvent =
   | { type: 'contexts'; contexts: string[] }
   | { type: 'reasoning'; token: string }
   | { type: 'token'; token: string }
+  | { type: 'tool_start'; tool: string; input: string }
+  | { type: 'tool_end'; tool: string; output: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
 
@@ -105,6 +113,8 @@ export interface StreamingChatCallbacks {
   onContexts?: (contexts: string[]) => void
   onReasoning?: (token: string) => void
   onToken?: (token: string) => void
+  onToolStart?: (tool: string, input: string) => void
+  onToolEnd?: (tool: string, output: string) => void
   onDone?: () => void
   onError?: (message: string) => void
 }
