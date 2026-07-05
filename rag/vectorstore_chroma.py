@@ -1,6 +1,7 @@
 """Chroma 向量存储模块。
 
-提供与 FAISS 平行的 Chroma 向量库实现，支持自动持久化。
+提供 Chroma 向量库的创建、加载、追加功能。
+每个知识库对应一个独立的 Chroma collection，持久化到本地目录。
 """
 
 from pathlib import Path
@@ -16,6 +17,7 @@ def _get_collection_persist_dir(
     collection_name: str,
     config: RAGConfig | None = None,
 ) -> Path:
+    """获取 collection 的持久化目录路径，不存在则创建。"""
     config = config or RAGConfig.from_json()
     persist_dir = Path(config.vector_store_dir) / "chroma" / collection_name
     persist_dir.mkdir(parents=True, exist_ok=True)
@@ -27,17 +29,21 @@ def create_vector_store(
     collection_name: str = "default",
     config: RAGConfig | None = None,
 ) -> Chroma:
-    """从文档列表创建 Chroma 向量库。"""
+    """从文档列表创建 Chroma 向量库。
+
+    智谱 Embedding API 单次最多支持 64 条文本，因此分批次添加。
+    """
     config = config or RAGConfig.from_json()
     embeddings = get_embeddings(config)
     persist_dir = _get_collection_persist_dir(collection_name, config)
 
-    # 智谱 Embedding API 单次最多支持 64 条文本，分批次添加
     vector_store = Chroma(
         persist_directory=str(persist_dir),
         embedding_function=embeddings,
         collection_name=collection_name,
     )
+
+    # 分批添加，每批最多 64 条（智谱 API 限制）
     batch_size = 64
     total = len(documents)
     for i in range(0, total, batch_size):
@@ -71,7 +77,7 @@ def append_to_vector_store(
     collection_name: str = "default",
     config: RAGConfig | None = None,
 ) -> Chroma:
-    """向已有 Chroma 向量库追加文档。"""
+    """向已有 Chroma 向量库追加文档（不删除原有数据）。"""
     config = config or RAGConfig.from_json()
     embeddings = get_embeddings(config)
     persist_dir = _get_collection_persist_dir(collection_name, config)
@@ -82,6 +88,7 @@ def append_to_vector_store(
         collection_name=collection_name,
     )
 
+    # 分批添加，每批最多 64 条（智谱 API 限制）
     batch_size = 64
     total = len(documents)
     for i in range(0, total, batch_size):

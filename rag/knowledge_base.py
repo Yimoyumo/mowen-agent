@@ -13,9 +13,10 @@ from pathlib import Path
 from rag.config import RAGConfig
 
 
-KB_META_FILE = "knowledge_bases.json"
+KB_META_FILE = "knowledge_bases.json"   # 知识库元数据持久化文件名
 
 
+# 知识库类型映射：key → 中文标签
 KB_TYPES = {
     "novel": "小说",
     "tech": "技术文档",
@@ -28,14 +29,17 @@ DEFAULT_KB_TYPE = "general"
 
 @dataclass
 class KnowledgeBase:
-    """知识库元数据。"""
+    """知识库元数据。
 
-    id: str
-    name: str
-    description: str
-    created_at: str
-    collection_name: str
-    kb_type: str = DEFAULT_KB_TYPE
+    存储在 knowledge_bases.json 中，与 Chroma collection 一一对应。
+    """
+
+    id: str               # UUID 唯一标识
+    name: str            # 用户可见的名称
+    description: str     # 描述
+    created_at: str      # 创建时间（ISO 格式）
+    collection_name: str # Chroma collection 名称（由 id 派生）
+    kb_type: str = DEFAULT_KB_TYPE  # novel/tech/project/general
 
 
 def _get_meta_path(config: RAGConfig | None = None) -> Path:

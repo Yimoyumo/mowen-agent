@@ -1,6 +1,7 @@
-"""RAG 检索-生成链模块。
+"""旧版 RAG 检索-生成链模块。
 
 组合查询扩写、多查询检索、提示模板和大模型，构建完整的问答链。
+新版通用对话使用 rag/chat_chain.py，此模块保留供 /ask 接口兼容。
 """
 
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain

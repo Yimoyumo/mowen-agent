@@ -2,14 +2,18 @@
 
 支持多轮上下文对话，RAG 作为可选增强功能。
 
+核心函数：chat_stream()
+- 无 kb_id：纯对话模式，使用通用系统提示词
+- 有 kb_id：RAG 模式，先检索相关文档，再注入提示词生成回答
+
 用法：
     # 纯对话
-    chain = get_chat_chain()
-    result = await chain.ainvoke({"messages": messages})
+    async for chunk in chat_stream(messages):
+        ...
 
     # RAG 增强对话
-    chain = get_chat_chain(kb_id="xxx")
-    result = await chain.ainvoke({"messages": messages})
+    async for chunk in chat_stream(messages, kb_id="xxx"):
+        ...
 """
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -164,33 +168,37 @@ async def chat_stream(
     context_template = ""
 
     if kb_id:
-        # RAG 模式：检索相关文档
+        # RAG 模式：检索相关文档并注入提示词
         from rag.knowledge_base import get_knowledge_base
 
         collection_name = _resolve_collection_name(kb_id, config)
 
-        # 根据知识库类型选择提示词
+        # 根据知识库类型选择对应提示词（小说/技术/项目/通用）
         kb = get_knowledge_base(kb_id, config)
         kb_type = kb.kb_type if kb else "general"
         system_prompt = _get_rag_prompt(kb_type)
 
+        # 取最后一条用户消息作为检索查询
         last_user_msg = ""
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 last_user_msg = msg.get("content", "")
                 break
 
+        # 执行查询扩写 + 多查询检索
         if last_user_msg:
             docs = expand_and_retrieve(last_user_msg, collection_name, config)
             context_texts = [doc.page_content for doc in docs]
 
-    # 将检索到的上下文拼入系统提示词
+    # 将检索到的上下文拼入系统提示词的 {context} 占位符
     context_text = "\n\n---\n\n".join(context_texts) if context_texts else "（未检索到相关上下文）"
     lc_messages = _build_messages(messages, system_prompt, context_text)
 
+    # 先返回检索到的上下文（供前端展示"参考上下文"按钮）
     if context_texts:
         yield {"type": "contexts", "contexts": context_texts}
 
+    # 流式输出 LLM 生成的回答
     async for token in llm.astream(lc_messages):
         content = _extract_token_content(token)
         if content:

@@ -1,6 +1,7 @@
 """RAG 完整流程封装。
 
 提供从原始文档构建向量库、到执行问答的一站式接口。
+这是旧版 RAG 链的入口，新版通用对话使用 rag/chat_chain.py。
 """
 
 from pathlib import Path

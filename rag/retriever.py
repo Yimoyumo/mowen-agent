@@ -12,11 +12,11 @@ from rag.query_expansion import expand_query
 from rag.vectorstore_chroma import load_vector_store
 
 
-# 特殊查询类型：结局/最终类问题
+# 特殊查询类型：结局/最终类问题——避免扩写后语义发散，直接原问题检索
 ENDING_QUESTION_KEYWORDS = ["结局", "最后", "最终", "完结", "终章", "结尾"]
 ENDING_CHAPTER_KEYWORDS = ["终章", "结局", "完结", "卷末终章", "尾声"]
 
-# 特殊查询类型：洛烟本质/身份类问题
+# 特殊查询类型：角色本质/身份类问题——优先召回揭示真相的章节
 ESSENCE_QUESTION_KEYWORDS = ["什么样的存在", "本质", "真实身份", "真实面目", "到底是谁", "究竟是"]
 ESSENCE_CHAPTER_KEYWORDS = ["恶意的神明", "终章", "卷末终章", "洛烟小姐的脚下埋着尸体"]
 
@@ -128,7 +128,8 @@ def expand_and_retrieve(
     vector_store = load_vector_store(collection_name, config)
     retriever = vector_store.as_retriever(search_kwargs={"k": config.top_k})
 
-    # 对结局/最终类问题，直接原问题检索，避免扩写后语义发散
+    # 对结局/最终类问题，直接用原问题检索（避免扩写后语义发散），
+    # 并额外从终章类章节中检索，合并后终章内容前置
     if _is_ending_question(question):
         print("检测到结局类问题，优先召回终章内容")
         base_docs = retriever.invoke(question)
@@ -150,13 +151,16 @@ def expand_and_retrieve(
         print("查询扩写已关闭，使用原问题检索")
         return retriever.invoke(question)
 
+    # 查询扩写：用 LLM 生成多个语义相关的查询，提升召回率
     try:
         queries = expand_query(question, config)
         print(f"查询扩写完成，共 {len(queries)} 个查询: {queries}")
     except Exception as exc:
+        # 扩写失败（如 API 限流），降级为原问题检索
         print(f"查询扩写失败，使用原问题检索: {exc}")
         queries = [question]
 
+    # 多查询检索：对每个查询执行检索，合并去重
     return _multi_query_retrieve(queries, retriever, config.top_k)
 
 
