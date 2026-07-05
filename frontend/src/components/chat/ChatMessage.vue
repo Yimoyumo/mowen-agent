@@ -15,7 +15,7 @@ const emit = defineEmits<{
   'toggleContext': []
 }>()
 
-const showReasoning = ref(false)  // 推理过程折叠/展开
+const showReasoning = ref(true)   // 推理过程默认展开
 </script>
 
 <template>
