@@ -14,6 +14,8 @@ import type { ChatMessage as ChatMessageType, ConfigResponse } from '@/types/api
   knowledgeBases: { id: string; name: string }[]
   currentKbId: string | null
   config: ConfigResponse | null
+  streamEnabled: boolean
+  showReasoning: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -21,6 +23,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 const emit = defineEmits<{
   'update:question': [value: string]
+  'update:streamEnabled': [value: boolean]
+  'update:showReasoning': [value: boolean]
   send: []
   stop: []
   selectExample: [question: string]
@@ -98,6 +102,27 @@ defineExpose({ scrollToBottom })
                 </el-tag>
               </div>
             </div>
+
+            <!-- 运行时开关 -->
+            <div class="config-popover-divider"></div>
+            <div class="config-popover-switches">
+              <div class="config-popover-switch-item">
+                <span class="config-popover-label">流式输出</span>
+                <el-switch
+                  :model-value="streamEnabled"
+                  size="small"
+                  @update:model-value="emit('update:streamEnabled', $event as boolean)"
+                />
+              </div>
+              <div class="config-popover-switch-item">
+                <span class="config-popover-label">显示推理过程</span>
+                <el-switch
+                  :model-value="showReasoning"
+                  size="small"
+                  @update:model-value="emit('update:showReasoning', $event as boolean)"
+                />
+              </div>
+            </div>
           </div>
         </el-popover>
       </div>
@@ -114,6 +139,7 @@ defineExpose({ scrollToBottom })
           :content="msg.content"
           :streaming="streaming && msg.id === messages[messages.length - 1].id"
           :contexts="msg.contexts"
+          :reasoning="msg.reasoning"
           @toggle-context="emit('toggleContext')"
         />
       </template>
@@ -208,6 +234,25 @@ defineExpose({ scrollToBottom })
 
 .config-popover-label {
   color: #909399;
+}
+
+.config-popover-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 8px 0;
+}
+
+.config-popover-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-popover-switch-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
 }
 
 .config-popover-value {

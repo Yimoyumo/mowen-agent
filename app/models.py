@@ -13,6 +13,8 @@ class ChatRequest(BaseModel):
     """通用对话请求。"""
     messages: list[dict]           # 对话历史 [{"role": "user"/"assistant", "content": "..."}]
     kb_id: str | None = None        # 知识库 ID，为空时纯对话，有值时启用 RAG 检索
+    stream: bool = True             # 是否流式输出（False 时一次性返回完整回答）
+    show_reasoning: bool = False    # 是否返回模型推理过程（DeepSeek reasoner 等模型支持）
 
 
 class AskRequest(BaseModel):

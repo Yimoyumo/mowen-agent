@@ -146,17 +146,22 @@ async def chat_stream(
     messages: list[dict],
     kb_id: str | None = None,
     config: RAGConfig | None = None,
+    stream: bool = True,
+    show_reasoning: bool = False,
 ):
-    """流式执行通用对话（可选 RAG 增强）。
+    """执行通用对话（可选 RAG 增强），流式或非流式输出。
 
     Args:
         messages: 对话历史 [{"role": "user"/"assistant", "content": "..."}]
         kb_id: 知识库 ID，提供时启用 RAG 检索增强
         config: RAG 配置
+        stream: True 时逐 token 输出，False 时一次性返回
+        show_reasoning: True 时额外返回模型推理过程
 
     Yields:
         字典序列：
         - {"type": "contexts", "contexts": ["..."]}  (仅 RAG 模式)
+        - {"type": "reasoning", "token": "..."}       (仅 show_reasoning=True)
         - {"type": "token", "token": "..."}
         - {"type": "done"}
     """
@@ -198,26 +203,44 @@ async def chat_stream(
     if context_texts:
         yield {"type": "contexts", "contexts": context_texts}
 
-    # 流式输出 LLM 生成的回答
-    async for token in llm.astream(lc_messages):
-        content = _extract_token_content(token)
+    if stream:
+        # 流式模式：逐 token 输出
+        async for token in llm.astream(lc_messages):
+            content, reasoning = _extract_token_content(token, show_reasoning)
+            if reasoning:
+                yield {"type": "reasoning", "token": reasoning}
+            if content:
+                yield {"type": "token", "token": content}
+    else:
+        # 非流式模式：一次性返回完整回答
+        result = await llm.ainvoke(lc_messages)
+        content, reasoning = _extract_token_content(result, show_reasoning)
+        if reasoning:
+            yield {"type": "reasoning", "token": reasoning}
         if content:
             yield {"type": "token", "token": content}
 
     yield {"type": "done"}
 
 
-def _extract_token_content(token) -> str:
-    """从流式 Token 中提取文本内容。"""
+def _extract_token_content(token, show_reasoning: bool = False) -> tuple[str, str]:
+    """从流式 Token 中提取文本内容。
+
+    返回 (content, reasoning) 元组：
+    - content: 正式回答内容
+    - reasoning: 推理过程内容（仅 show_reasoning=True 时提取）
+
+    DeepSeek reasoner 等模型会把思考过程放在 additional_kwargs['reasoning_content'] 中。
+    """
     if isinstance(token, str):
-        return token
+        return token, ""
 
-    parts: list[str] = []
+    content = ""
     if hasattr(token, "content") and token.content:
-        parts.append(str(token.content))
+        content = str(token.content)
 
-    reasoning = getattr(token, "additional_kwargs", {}).get("reasoning_content", "")
-    if reasoning:
-        parts.append(str(reasoning))
+    reasoning = ""
+    if show_reasoning:
+        reasoning = str(getattr(token, "additional_kwargs", {}).get("reasoning_content", ""))
 
-    return "".join(parts)
+    return content, reasoning

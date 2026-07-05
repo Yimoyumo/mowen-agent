@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 
 interface Props {
@@ -6,12 +7,15 @@ interface Props {
   content: string
   streaming?: boolean
   contexts?: string[]
+  reasoning?: string
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 const emit = defineEmits<{
   'toggleContext': []
 }>()
+
+const showReasoning = ref(false)  // 推理过程折叠/展开
 </script>
 
 <template>
@@ -25,7 +29,18 @@ const emit = defineEmits<{
     </div>
     <div class="message-body">
       <div class="message-title">{{ type === 'user' ? '你' : '墨问' }}</div>
-      <div v-if="streaming && !content" class="typing-indicator">
+
+      <!-- 推理过程区域（可折叠） -->
+      <div v-if="reasoning" class="reasoning-section">
+        <button class="reasoning-toggle" @click="showReasoning = !showReasoning">
+          <el-icon class="reasoning-icon" :class="{ expanded: showReasoning }"><ArrowRight /></el-icon>
+          <span>{{ showReasoning ? '收起推理过程' : '展开推理过程' }}</span>
+          <span v-if="streaming && !content" class="reasoning-status">思考中…</span>
+        </button>
+        <div v-if="showReasoning" class="reasoning-content markdown-body" v-html="renderMarkdown(reasoning)"></div>
+      </div>
+
+      <div v-if="streaming && !content && !reasoning" class="typing-indicator">
         <span></span>
         <span></span>
         <span></span>
@@ -107,6 +122,56 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* 推理过程折叠区域 */
+.reasoning-section {
+  margin-bottom: 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.reasoning-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: #fafafa;
+  color: #909399;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.reasoning-toggle:hover {
+  background: #f0f0f0;
+}
+
+.reasoning-icon {
+  transition: transform 0.2s;
+  font-size: 12px;
+}
+
+.reasoning-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.reasoning-status {
+  color: #409eff;
+  font-size: 11px;
+}
+
+.reasoning-content {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.7;
+  border-top: 1px solid #e8e8e8;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .message-content {

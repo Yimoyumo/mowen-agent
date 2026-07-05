@@ -20,13 +20,21 @@ export function chatStream(
   messages: ChatRequest['messages'],
   kbId: string | null | undefined,
   callbacks: StreamingChatCallbacks,
+  options?: { stream?: boolean; showReasoning?: boolean },
 ): () => void {
   const abortController = new AbortController()
+
+  const body: ChatRequest = {
+    messages,
+    kb_id: kbId ?? null,
+    stream: options?.stream ?? true,
+    show_reasoning: options?.showReasoning ?? false,
+  }
 
   fetch(`${apiClient.defaults.baseURL}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, kb_id: kbId ?? null } satisfies ChatRequest),
+    body: JSON.stringify(body),
     signal: abortController.signal,
   })
     .then(async (response) => {
@@ -64,11 +72,13 @@ export function chatStream(
           try {
             const event = JSON.parse(payload) as
               | { type: 'contexts'; contexts: string[] }
+              | { type: 'reasoning'; token: string }
               | { type: 'token'; token: string }
               | { type: 'done' }
               | { type: 'error'; message: string }
 
             if (event.type === 'contexts') callbacks.onContexts?.(event.contexts)
+            else if (event.type === 'reasoning') callbacks.onReasoning?.(event.token)
             else if (event.type === 'token') callbacks.onToken?.(event.token)
             else if (event.type === 'done') callbacks.onDone?.()
             else if (event.type === 'error') callbacks.onError?.(event.message)

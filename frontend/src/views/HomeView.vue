@@ -13,6 +13,8 @@ const {
   question,
   loading,
   streaming,
+  streamEnabled,
+  showReasoning,
   messages,
   currentConversation,
   conversations,
@@ -77,6 +79,8 @@ function handleClearConversations() {
     <div class="main-wrapper" :class="{ 'context-open': showContext }">
       <ChatArea
         v-model:question="question"
+        v-model:stream-enabled="streamEnabled"
+        v-model:show-reasoning="showReasoning"
         :loading="loading"
         :streaming="streaming"
         :disabled="!isReady"

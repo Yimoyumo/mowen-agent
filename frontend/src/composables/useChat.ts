@@ -14,6 +14,10 @@ export function useChat() {
   const streaming = ref(false)
   const abortFn = ref<(() => void) | null>(null)
 
+  // 用户可切换的运行时选项
+  const streamEnabled = ref(true)        // 流式输出开关
+  const showReasoning = ref(false)        // 显示推理过程开关
+
   const currentConversation = computed(() => store.currentConversation)
   const messages = computed(() => store.currentMessages)
 
@@ -64,34 +68,50 @@ export function useChat() {
 
     let abortCalled = false
 
-    abortFn.value = chatStream(apiMessages, kbStore.currentKbId, {
-      onContexts: (contexts) => {
-        store.updateMessage(conv.id, assistantMsg.id, { contexts })
+    abortFn.value = chatStream(
+      apiMessages,
+      kbStore.currentKbId,
+      {
+        onContexts: (contexts) => {
+          store.updateMessage(conv.id, assistantMsg.id, { contexts })
+        },
+        onReasoning: (token) => {
+          const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          if (msg) {
+            store.updateMessage(conv.id, assistantMsg.id, {
+              reasoning: (msg.reasoning ?? '') + token,
+            })
+          }
+        },
+        onToken: (token) => {
+          const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          if (msg) {
+            store.updateMessage(conv.id, assistantMsg.id, { content: msg.content + token })
+          }
+        },
+        onDone: () => {
+          loading.value = false
+          streaming.value = false
+          abortFn.value = null
+        },
+        onError: (msg) => {
+          if (abortCalled) return
+          loading.value = false
+          streaming.value = false
+          abortFn.value = null
+          const current = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          const errorMsg = `\n\n[生成失败] ${msg}`
+          store.updateMessage(conv.id, assistantMsg.id, {
+            content: (current?.content ?? '') + errorMsg,
+          })
+          ElMessage.error(msg)
+        },
       },
-      onToken: (token) => {
-        const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
-        if (msg) {
-          store.updateMessage(conv.id, assistantMsg.id, { content: msg.content + token })
-        }
+      {
+        stream: streamEnabled.value,
+        showReasoning: showReasoning.value,
       },
-      onDone: () => {
-        loading.value = false
-        streaming.value = false
-        abortFn.value = null
-      },
-      onError: (msg) => {
-        if (abortCalled) return
-        loading.value = false
-        streaming.value = false
-        abortFn.value = null
-        const current = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
-        const errorMsg = `\n\n[生成失败] ${msg}`
-        store.updateMessage(conv.id, assistantMsg.id, {
-          content: (current?.content ?? '') + errorMsg,
-        })
-        ElMessage.error(msg)
-      },
-    })
+    )
 
     // 保存 abort 函数用于外部中断
     return () => {
@@ -136,6 +156,8 @@ export function useChat() {
     question,
     loading,
     streaming,
+    streamEnabled,
+    showReasoning,
     messages,
     currentConversation,
     conversations: computed(() => store.conversations),

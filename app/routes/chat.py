@@ -43,7 +43,11 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
     # SSE 流式生成器：逐块调用 rag_chat_stream 并以 data: 格式输出
     async def event_generator():
         try:
-            async for chunk in rag_chat_stream(request.messages, request.kb_id):
+            async for chunk in rag_chat_stream(
+                request.messages, request.kb_id,
+                stream=request.stream,
+                show_reasoning=request.show_reasoning,
+            ):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': f'对话失败: {exc}'}, ensure_ascii=False)}\n\n"

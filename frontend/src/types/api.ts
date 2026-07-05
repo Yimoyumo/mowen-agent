@@ -6,6 +6,7 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  reasoning?: string           // 模型推理过程（DeepSeek reasoner 等模型支持）
   contexts?: string[]
   createdAt: number
 }
@@ -22,6 +23,8 @@ export interface Conversation {
 export interface ChatRequest {
   messages: { role: 'user' | 'assistant'; content: string }[]
   kb_id?: string | null
+  stream?: boolean             // 是否流式输出，默认 true
+  show_reasoning?: boolean     // 是否返回推理过程，默认 false
 }
 
 // ==================== 知识库类型 ====================
@@ -93,12 +96,14 @@ export interface HealthResponse {
 
 export type StreamEvent =
   | { type: 'contexts'; contexts: string[] }
+  | { type: 'reasoning'; token: string }
   | { type: 'token'; token: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
 
 export interface StreamingChatCallbacks {
   onContexts?: (contexts: string[]) => void
+  onReasoning?: (token: string) => void
   onToken?: (token: string) => void
   onDone?: () => void
   onError?: (message: string) => void
