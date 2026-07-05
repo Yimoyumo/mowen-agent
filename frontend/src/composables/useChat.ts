@@ -1,9 +1,20 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { chatStream } from '@/api/chat'
 import { useChatStore } from '@/stores/chat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import type { ChatMessage } from '@/types/api'
+
+function loadBool(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v !== null ? v === 'true' : fallback
+  } catch { return fallback }
+}
+
+function saveBool(key: string, value: boolean) {
+  try { localStorage.setItem(key, String(value)) } catch { /* ignore */ }
+}
 
 export function useChat() {
   const store = useChatStore()
@@ -14,9 +25,12 @@ export function useChat() {
   const streaming = ref(false)
   const abortFn = ref<(() => void) | null>(null)
 
-  // 用户可切换的运行时选项
-  const streamEnabled = ref(true)        // 流式输出开关
-  const showReasoning = ref(false)        // 显示推理过程开关
+  // 用户可切换的运行时选项（localStorage 持久化）
+  const streamEnabled = ref(loadBool('mowen-stream', true))
+  const showReasoning = ref(loadBool('mowen-reasoning', false))
+
+  watch(streamEnabled, v => saveBool('mowen-stream', v))
+  watch(showReasoning, v => saveBool('mowen-reasoning', v))
 
   const currentConversation = computed(() => store.currentConversation)
   const messages = computed(() => store.currentMessages)
