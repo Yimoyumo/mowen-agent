@@ -1,218 +1,112 @@
-"""RAG 配置模块。
+"""RAG config dataclass - loaded from user_settings."""
 
-从 config.json 读取模型、API Key 等配置，提供统一的配置访问入口。
-
-特性：
-- 基于 mtime 的缓存：文件未修改时直接返回缓存，避免重复 IO
-- 开发环境友好：config.json 改动后自动失效（uvicorn --reload 重载时也会重新读取）
-- 手动刷新：调用 RAGConfig.reload() 可强制刷新缓存
-"""
-
-import json
-import os
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 
 
-# ==================== 配置缓存 ====================
-
-# 缓存：(RAGConfig 实例, 文件 mtime, 文件路径)
-# 文件 mtime 变化时自动失效，无需手动管理
-_config_cache: tuple["RAGConfig", float, str] | None = None
+def _split_model_ref(ref: str) -> tuple[str, str]:
+    if "/" in ref:
+        a, b = ref.split("/", 1)
+        return a, b
+    return "", ref
 
 
 @dataclass
 class RAGConfig:
-    """RAG 配置数据类。
+    active_model: str = ""
+    embedding_model: str = ""
+    providers: dict = field(default_factory=dict)
+    temperature: float = 0.5
+    max_tokens: int | None = None
+    timeout: int = 120
+    streaming: bool = False
+    enable_thinking: bool = True
+    reasoning_effort: str | None = None
+    top_p: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    vector_store_dir: str = "./vectorstore"
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+    chapter_split: bool = False
+    chapter_chunk_threshold: int = 1500
+    chapter_chunk_overlap: int = 200
+    top_k: int = 4
+    enable_query_expansion: bool = False
+    max_context_tokens: int = 0
+    tavily_api_key: str = ""
+    mcp_servers: dict = field(default_factory=dict)
+    skills: list = field(default_factory=list)
+    logging: dict = field(default_factory=dict)
+    deepseek_api_key: str = ""
+    zhipu_api_key: str = ""
 
-    所有字段都有默认值，可通过 config.json 覆盖。
-    API Key 优先从 config.json 读取，其次从环境变量读取。
-    """
+    @property
+    def chat_provider(self) -> str:
+        p, _ = _split_model_ref(self.active_model)
+        return p
 
-    # ---- 模型配置 ----
-    zhipu_api_key: str                          # 智谱 AI API Key（用于 Embedding 和 GLM 对话）
-    chat_model: str                             # 对话模型名称
-    embedding_model: str                        # 向量模型名称
-    chat_provider: str = "zhipuai"              # 对话模型厂商：deepseek / zhipuai
-    deepseek_api_key: str | None = None         # DeepSeek API Key
+    @property
+    def chat_model(self) -> str:
+        _, m = _split_model_ref(self.active_model)
+        return m
 
-    # ---- 生成参数 ----
-    temperature: float = 0.5                    # 生成温度（越高越随机）
-    max_tokens: int | None = None              # 最大生成 token 数
-    timeout: int = 120                          # 请求超时（秒）
-    streaming: bool = False                    # 是否流式输出
-    enable_thinking: bool = True               # 是否启用思考模式（DeepSeek）
-    reasoning_effort: str | None = None        # 推理深度：low/medium/high
-    top_p: float | None = None                 # 核采样概率
-    frequency_penalty: float | None = None    # 频率惩罚
-    presence_penalty: float | None = None      # 存在惩罚
+    @property
+    def embedding_provider(self) -> str:
+        if not self.embedding_model:
+            return ""
+        p, _ = _split_model_ref(self.embedding_model)
+        return p
 
-    # ---- 向量库与切分配置 ----
-    vector_store_dir: str = "./vectorstore"    # 向量库持久化目录
-    chunk_size: int = 500                      # 文本块大小（字符数）
-    chunk_overlap: int = 50                    # 块间重叠字符数
-    chapter_split: bool = False               # 是否按章节切分
-    chapter_chunk_threshold: int = 1500        # 章节切分阈值（超过则细切）
-    chapter_chunk_overlap: int = 200            # 章节细切重叠
+    def get_active_api_key(self) -> str:
+        return self.providers.get(self.chat_provider, {}).get("api_key", "")
 
-    # ---- 检索配置 ----
-    top_k: int = 4                             # 检索返回的文档数
-    enable_query_expansion: bool = False       # 是否开启查询扩写
+    def get_embedding_api_key(self) -> str | None:
+        ep = self.embedding_provider
+        if ep and ep in self.providers:
+            k = self.providers[ep].get("api_key", "")
+            if k:
+                return k
+        for fid in ("zhipuai", "deepseek"):
+            if fid in self.providers:
+                k = self.providers[fid].get("api_key", "")
+                if k:
+                    return k
+        return None
 
-    # ---- 上下文窗口配置 ----
-    max_context_tokens: int = 0               # 最大输入 token 数，0=不限制
+    def get_provider_base_url(self, pid: str = "") -> str:
+        return self.providers.get(pid or self.chat_provider, {}).get("base_url", "")
 
-    # ---- Agent 配置 ----
-    tavily_api_key: str = ""                  # Tavily 联网搜索 API Key
+    def list_preset_providers(self) -> list[dict]:
+        return [
+            {"id": pid, **d}
+            for pid, d in self.providers.items()
+            if d.get("preset")
+        ]
 
-    # ---- MCP 配置 ----
-    mcp_servers: dict = None                 # MCP 服务器配置 {name: {command, args, transport}}
+    def list_all_models(self) -> list[str]:
+        r = []
+        for pid, d in self.providers.items():
+            for m in d.get("models", []):
+                r.append(f"{pid}/{m}")
+        return r
 
-    # ---- Skills 配置 ----
-    skills: list = None                      # 启用的技能列表 ["data_analysis", ...]
+    def get_active_model_context_window(self) -> int:
+        """获取当前选中模型的上下文窗口大小（token 数）。"""
+        from server.model_context import get_model_context_window
+        return get_model_context_window(self.active_model)
 
-    # ---- 日志配置 ----
-    logging: dict = None                     # 日志配置 {level, file, modules, ...}
+    def get_active_model_max_output(self) -> int:
+        """获取当前选中模型的最大输出 token 数。"""
+        from server.model_context import get_model_max_output
+        return get_model_max_output(self.active_model)
 
-    @classmethod
-    def from_json(cls, path: str | Path = "config.json") -> "RAGConfig":
-        """从 JSON 配置文件加载配置（带 mtime 缓存）。
-
-        文件未修改时直接返回缓存实例，避免重复 IO。
-        文件修改后自动失效并重新读取。
-
-        支持两种格式：
-        1. 模块化格式（推荐）：api_keys / model / generation / chunking / retrieval / context
-        2. 扁平格式（旧版兼容）：所有 key 平铺在一层
-
-        Args:
-            path: 配置文件路径，默认 "config.json"
-        """
-        global _config_cache
-
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(f"配置文件不存在: {path.absolute()}")
-
-        # 检查缓存：路径相同 + 文件未修改 → 直接返回缓存
-        current_mtime = path.stat().st_mtime
-        if _config_cache is not None:
-            cached_config, cached_mtime, cached_path = _config_cache
-            if cached_path == str(path) and cached_mtime == current_mtime:
-                return cached_config
-
-        # 缓存未命中或文件已修改 → 重新读取
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # 检测格式：有 "model" 嵌套 key 为模块化格式，否则为扁平格式
-        if "model" in data:
-            config = cls._from_nested(data)
-        else:
-            config = cls._from_flat(data)
-
-        # 更新缓存
-        _config_cache = (config, current_mtime, str(path))
-        return config
-
-    @classmethod
-    def reload(cls) -> "RAGConfig":
-        """强制刷新配置缓存，重新读取 config.json。
-
-        用于运行时修改配置后立即生效（无需重启服务）。
-        """
-        global _config_cache
-        _config_cache = None
-        return cls.from_json()
+    def get_active_model_info(self) -> dict:
+        """获取当前选中模型的完整信息（支持用户自定义覆盖）。"""
+        from server.model_context import get_model_info_with_overrides
+        info = get_model_info_with_overrides(self.active_model)
+        return {"context_window": info["context_window"], "max_output": info["max_output"]}
 
     @classmethod
-    def _from_nested(cls, data: dict) -> "RAGConfig":
-        """从模块化 JSON 结构加载配置。"""
-        api = data.get("api_keys", {})
-        model = data.get("model", {})
-        gen = data.get("generation", {})
-        chunk = data.get("chunking", {})
-        retrieval = data.get("retrieval", {})
-        ctx = data.get("context", {})
-        vs = data.get("vector_store", {})
-        agent = data.get("agent", {})
-
-        return cls(
-            # API Keys
-            zhipu_api_key=api.get("zhipuai", os.getenv("ZHIPUAI_API_KEY", "")),
-            deepseek_api_key=api.get("deepseek", os.getenv("DEEPSEEK_API_KEY")),
-
-            # Model
-            chat_provider=model.get("provider", "zhipuai"),
-            chat_model=model.get("chat", "glm-4.6v-flashx"),
-            embedding_model=model.get("embedding", "embedding-3"),
-
-            # Generation
-            temperature=gen.get("temperature", 0.5),
-            max_tokens=gen.get("max_tokens"),
-            timeout=gen.get("timeout", 120),
-            streaming=gen.get("streaming", False),
-            enable_thinking=gen.get("thinking", False),
-            reasoning_effort=gen.get("reasoning_effort"),
-            top_p=gen.get("top_p"),
-            frequency_penalty=gen.get("frequency_penalty"),
-            presence_penalty=gen.get("presence_penalty"),
-
-            # Chunking
-            vector_store_dir=vs.get("dir", "./vectorstore"),
-            chunk_size=chunk.get("size", 500),
-            chunk_overlap=chunk.get("overlap", 50),
-            chapter_split=chunk.get("chapter_split", False),
-            chapter_chunk_threshold=chunk.get("chapter_threshold", 1500),
-            chapter_chunk_overlap=chunk.get("chapter_overlap", 200),
-
-            # Retrieval
-            top_k=retrieval.get("top_k", 4),
-            enable_query_expansion=retrieval.get("query_expansion", False),
-
-            # Context
-            max_context_tokens=ctx.get("max_tokens", 0),
-
-            # Agent
-            tavily_api_key=agent.get("tavily_api_key", os.getenv("TAVILY_API_KEY", "")),
-
-            # MCP & Skills
-            mcp_servers=data.get("mcp_servers"),
-            skills=data.get("skills"),
-
-            # Logging
-            logging=data.get("logging"),
-        )
-
-    @classmethod
-    def _from_flat(cls, data: dict) -> "RAGConfig":
-        """从扁平 JSON 结构加载配置（旧版兼容）。"""
-        return cls(
-            zhipu_api_key=data.get("zhipu_api_key", os.getenv("ZHIPUAI_API_KEY", "")),
-            chat_model=data.get("chat_model", "glm-4.6v-flashx"),
-            embedding_model=data.get("embedding_model", "embedding-3"),
-            chat_provider=data.get("chat_provider", "zhipuai"),
-            deepseek_api_key=data.get("deepseek_api_key", os.getenv("DEEPSEEK_API_KEY")),
-            temperature=data.get("temperature", 0.5),
-            max_tokens=data.get("max_tokens"),
-            timeout=data.get("timeout", 120),
-            streaming=data.get("streaming", False),
-            enable_thinking=data.get("enable_thinking", False),
-            reasoning_effort=data.get("reasoning_effort"),
-            top_p=data.get("top_p"),
-            frequency_penalty=data.get("frequency_penalty"),
-            presence_penalty=data.get("presence_penalty"),
-            vector_store_dir=data.get("vector_store_dir", "./vectorstore"),
-            chunk_size=data.get("chunk_size", 500),
-            chunk_overlap=data.get("chunk_overlap", 50),
-            chapter_split=data.get("chapter_split", False),
-            chapter_chunk_threshold=data.get("chapter_chunk_threshold", 1500),
-            chapter_chunk_overlap=data.get("chapter_chunk_overlap", 200),
-            top_k=data.get("top_k", 4),
-            enable_query_expansion=data.get("enable_query_expansion", False),
-            max_context_tokens=data.get("max_context_tokens", 0),
-            tavily_api_key=data.get("tavily_api_key", os.getenv("TAVILY_API_KEY", "")),
-
-            # Logging
-            logging=data.get("logging"),
-        )
+    def from_settings(cls) -> "RAGConfig":
+        from server.user_settings import build_config, user_settings
+        return build_config(user_settings.load())

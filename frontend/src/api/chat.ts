@@ -78,18 +78,24 @@ export function chatStream(
             const event = JSON.parse(payload) as
               | { type: 'contexts'; contexts: string[] }
               | { type: 'reasoning'; token: string }
-              | { type: 'token'; token: string }
+              | { type: 'token'; token: string; input_tokens?: number; output_tokens?: number; context_window?: number }
               | { type: 'tool_start'; tool: string; input: string }
               | { type: 'tool_end'; tool: string; output: string }
-              | { type: 'done' }
+              | { type: 'done'; input_tokens?: number; output_tokens?: number; context_window?: number }
               | { type: 'error'; message: string }
 
             if (event.type === 'contexts') callbacks.onContexts?.(event.contexts)
             else if (event.type === 'reasoning') callbacks.onReasoning?.(event.token)
-            else if (event.type === 'token') callbacks.onToken?.(event.token)
+            else if (event.type === 'token') {
+              callbacks.onToken?.(event.token)
+              // 实时更新 token 统计
+              if (event.input_tokens != null) {
+                callbacks.onTokenStats?.({ input_tokens: event.input_tokens, output_tokens: event.output_tokens ?? 0, context_window: event.context_window ?? 0 })
+              }
+            }
             else if (event.type === 'tool_start') callbacks.onToolStart?.(event.tool, event.input)
             else if (event.type === 'tool_end') callbacks.onToolEnd?.(event.tool, event.output)
-            else if (event.type === 'done') callbacks.onDone?.()
+            else if (event.type === 'done') callbacks.onDone?.(event.input_tokens != null ? { input_tokens: event.input_tokens, output_tokens: event.output_tokens ?? 0, context_window: event.context_window ?? 0 } : undefined)
             else if (event.type === 'error') callbacks.onError?.(event.message)
           } catch {
             // 忽略无法解析的行

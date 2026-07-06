@@ -29,6 +29,9 @@ export function useChat() {
   const streamEnabled = ref(loadBool('mowen-stream', true))
   const showReasoning = ref(loadBool('mowen-reasoning', false))
 
+  // 本次对话的 token 统计
+  const tokenStats = ref<{ input_tokens: number; output_tokens: number; context_window: number } | null>(null)
+
   watch(streamEnabled, v => saveBool('mowen-stream', v))
   watch(showReasoning, v => saveBool('mowen-reasoning', v))
 
@@ -98,6 +101,9 @@ export function useChat() {
             })
           }
         },
+        onTokenStats: (stats) => {
+          tokenStats.value = stats
+        },
         onToolStart: (tool, input) => {
           const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
           if (msg) {
@@ -113,8 +119,9 @@ export function useChat() {
             const segs = [...(msg.segments ?? [])]
             // 从后往前找第一个同名且 running 的 tool segment
             for (let i = segs.length - 1; i >= 0; i--) {
-              if (segs[i].type === 'tool' && segs[i].tool === tool && segs[i].status === 'running') {
-                segs[i] = { ...segs[i], type: 'tool', tool, output, status: 'done' }
+              const seg = segs[i]
+              if (seg && seg.type === 'tool' && seg.tool === tool && seg.status === 'running') {
+                segs[i] = { ...seg, type: 'tool', tool, output, status: 'done' }
                 break
               }
             }
@@ -137,10 +144,11 @@ export function useChat() {
             store.updateMessage(conv.id, assistantMsg.id, { content: newContent, segments: segs })
           }
         },
-        onDone: () => {
+        onDone: (stats) => {
           loading.value = false
           streaming.value = false
           abortFn.value = null
+          if (stats) tokenStats.value = stats
         },
         onError: (msg) => {
           if (abortCalled) return
@@ -207,6 +215,7 @@ export function useChat() {
     streaming,
     streamEnabled,
     showReasoning,
+    tokenStats,
     messages,
     currentConversation,
     conversations: computed(() => store.conversations),

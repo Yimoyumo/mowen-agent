@@ -25,7 +25,7 @@ def get_rag_chain(kb_id: str | None = None, config: RAGConfig | None = None):
     Returns:
         调用 invoke({"input": question}) 后返回 {"input", "context", "answer"} 字典。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     llm = get_chat_model(config)
     collection_name = _resolve_collection_name(kb_id, config)
 
@@ -44,7 +44,7 @@ def get_rag_streaming_chain(kb_id: str | None = None, config: RAGConfig | None =
 
     与 get_rag_chain 类似，但 answer 字段直接绑定 LLM 的流式输出（异步迭代器）。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     llm = get_chat_model(config)
     collection_name = _resolve_collection_name(kb_id, config)
 

@@ -8,7 +8,7 @@ Agent 在系统提示词中根据用户任务自动参考相关技能。
 1. 指令式（.md）：纯提示词指导，无额外工具
 2. 代码式（.py）：提供额外的 Python 工具函数
 
-配置格式（config.json）:
+配置格式（data/user_settings.json）:
     "skills": ["data_analysis", "web_scraping"]
 """
 

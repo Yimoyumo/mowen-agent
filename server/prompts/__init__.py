@@ -21,6 +21,7 @@ from server.prompts.agent import (
     get_time_section,
     get_skills_section,
     get_uploaded_files_section,
+    get_memory_section,
 )
 from server.prompts.rag import RAG_CHAT_PROMPT, RAG_SYSTEM_TEMPLATE
 from server.prompts.query_expansion import QUERY_EXPANSION_PROMPT, EXPANSION_SYSTEM_MSG
@@ -31,6 +32,7 @@ __all__ = [
     "get_time_section",
     "get_skills_section",
     "get_uploaded_files_section",
+    "get_memory_section",
     # RAG
     "RAG_CHAT_PROMPT",
     "RAG_SYSTEM_TEMPLATE",

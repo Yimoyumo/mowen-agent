@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import type { Conversation } from '@/types/api'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import ChatHistoryPanel from './ChatHistoryPanel.vue'
@@ -27,8 +28,14 @@ const emit = defineEmits<{
   'new-conversation': []
 }>()
 
+const router = useRouter()
+
 function handleCreate(name: string, description: string, kbType: string) {
   emit('create-kb', name, description, kbType)
+}
+
+function goSettings() {
+  router.push('/settings')
 }
 </script>
 
@@ -74,6 +81,13 @@ function handleCreate(name: string, description: string, kbType: string) {
           @new-conversation="emit('new-conversation')"
         />
       </el-card>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="settings-btn" :title="collapsed ? '设置' : ''" @click="goSettings">
+        <el-icon><Setting /></el-icon>
+        <span v-if="!collapsed">设置</span>
+      </button>
     </div>
   </aside>
 </template>
@@ -186,5 +200,35 @@ function handleCreate(name: string, description: string, kbType: string) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.sidebar-footer {
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.settings-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #606266;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.app-sidebar.collapsed .settings-btn {
+  justify-content: center;
+  padding: 8px;
+}
+
+.settings-btn:hover {
+  background: #f5f5f5;
+  color: #1d1d1d;
 }
 </style>

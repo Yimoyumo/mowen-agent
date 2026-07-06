@@ -12,11 +12,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from server.logging_config import get_logger, setup_logging, set_request_id, get_request_id
+from server.db import db
 from app.errors import AppException
 
 # 初始化日志系统（幂等，首次调用生效）
 setup_logging()
 logger = get_logger("app")
+
+# 初始化数据库（建表 + JSON 迁移，幂等）
+db.init()
 
 
 app = FastAPI(
@@ -113,13 +117,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 # 导入并注册路由模块
-from app.routes import chat, config, files, knowledge_bases  # noqa: E402
+from app.routes import chat, config, files, knowledge_bases, memory, settings  # noqa: E402
 from app.cleanup import start_cleanup_task  # noqa: E402
 
 app.include_router(chat.router, tags=["对话"])
 app.include_router(config.router, tags=["配置"])
 app.include_router(files.router, tags=["文件"])
 app.include_router(knowledge_bases.router, tags=["知识库"])
+app.include_router(memory.router, tags=["记忆"])
+app.include_router(settings.router, tags=["用户设置"])
 
 
 # ==================== 启动/关闭事件 ====================

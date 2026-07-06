@@ -6,7 +6,7 @@
 特性：
 - 控制台彩色输出（开发环境）+ 文件轮转（生产环境）
 - 按模块名隔离日志级别，可独立调试某个模块
-- 配置驱动：通过 config.json 的 "logging" 字段调整级别/格式/文件
+- 配置驱动：通过 user_settings.json 的 "logging" 字段调整级别/格式/文件
 - 请求追踪：HTTP 中间件自动注入 request_id
 
 用法：
@@ -15,7 +15,7 @@
     logger.info("消息")
     logger.debug("调试信息")  # 默认不输出，可通过配置开启
 
-配置示例（config.json）：
+配置示例（user_settings.json）：
     "logging": {
         "level": "INFO",
         "file": "logs/mowen.log",
@@ -79,30 +79,27 @@ _FILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # ==================== 配置加载 ====================
 
 def _load_log_config() -> dict:
-    """从 config.json 读取日志配置。
-
-    返回结构：
-        {
-            "level": "INFO",
-            "file": "logs/mowen.log",   # None 表示不写文件
-            "max_bytes": 10485760,
-            "backup_count": 5,
-            "modules": {"server.agent": "DEBUG", ...}
-        }
-    """
+    """从 user_settings 读取日志配置。"""
+    # 默认值（配置加载失败时使用）
+    default = {
+        "level": "INFO",
+        "file": "logs/mowen.log",
+        "max_bytes": 10 * 1024 * 1024,
+        "backup_count": 5,
+        "modules": {},
+    }
     try:
-        config = RAGConfig.from_json()
+        config = RAGConfig.from_settings()
         raw = getattr(config, "logging", None) or {}
     except Exception:
-        # 配置加载失败时使用默认值，绝不因日志初始化失败而崩溃
-        return {}
+        return default
 
     return {
-        "level": raw.get("level", "INFO"),
-        "file": raw.get("file", "logs/mowen.log"),
-        "max_bytes": raw.get("max_bytes", 10 * 1024 * 1024),  # 10MB
-        "backup_count": raw.get("backup_count", 5),
-        "modules": raw.get("modules", {}),
+        "level": raw.get("level", default["level"]),
+        "file": raw.get("file", default["file"]),
+        "max_bytes": raw.get("max_bytes", default["max_bytes"]),
+        "backup_count": raw.get("backup_count", default["backup_count"]),
+        "modules": raw.get("modules", default["modules"]),
     }
 
 

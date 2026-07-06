@@ -51,7 +51,8 @@ function toolGlobalIndex(segIndex: number) {
   if (!props.segments) return 0
   let count = 0
   for (let i = 0; i < segIndex; i++) {
-    if (props.segments[i].type === 'tool') count++
+    const seg = props.segments[i]
+    if (seg && seg.type === 'tool') count++
   }
   return count
 }

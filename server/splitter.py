@@ -51,7 +51,7 @@ CHAPTER_PATTERNS = [
 
 def get_text_splitter(config: RAGConfig | None = None) -> RecursiveCharacterTextSplitter:
     """创建递归字符文本分割器。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     return RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
@@ -244,7 +244,7 @@ def _split_by_chapters(
 
 def split_documents(documents: list[Document], config: RAGConfig | None = None) -> list[Document]:
     """将文档列表切分为文本块（使用全局配置）。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     return split_documents_by_type(documents, "general", config)
 
 
@@ -258,12 +258,12 @@ def split_documents_by_type(
     Args:
         documents: 原始文档列表。
         kb_type: 知识库类型，可选 novel/tech/project/general。
-        config: RAG 配置，为空时自动读取 config.json。
+        config: RAG 配置，为空时自动读取 user_settings。
 
     Returns:
         切分后的 Document 列表。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
 
     if kb_type == "novel":
         return _split_novel_documents(documents, config)

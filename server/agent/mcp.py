@@ -8,7 +8,7 @@
 - 超时保护：每个 server 连接最多等待 10 秒
 - 降级策略：连接失败的 server 跳过，不阻塞 Agent 启动
 
-配置格式（config.json）:
+配置格式（data/user_settings.json）:
     "mcp_servers": {
         "filesystem": {
             "command": "npx",

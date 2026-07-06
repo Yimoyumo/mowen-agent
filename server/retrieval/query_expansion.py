@@ -22,7 +22,7 @@ def expand_query(question: str, config: RAGConfig | None = None) -> list[str]:
     Returns:
         扩写后的查询列表，包含原始问题。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     llm = get_chat_model(config)
 
     # 用 PromptTemplate 格式化用户提示词

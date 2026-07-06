@@ -18,7 +18,7 @@ def _get_collection_persist_dir(
     config: RAGConfig | None = None,
 ) -> Path:
     """获取 collection 的持久化目录路径，不存在则创建。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     persist_dir = Path(config.vector_store_dir) / "chroma" / collection_name
     persist_dir.mkdir(parents=True, exist_ok=True)
     return persist_dir
@@ -33,7 +33,7 @@ def create_vector_store(
 
     智谱 Embedding API 单次最多支持 64 条文本，因此分批次添加。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     embeddings = get_embeddings(config)
     persist_dir = _get_collection_persist_dir(collection_name, config)
 
@@ -61,7 +61,7 @@ def load_vector_store(
 
     若 collection 尚未写入数据，也返回 Chroma 实例（空库），避免调用方报错。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     persist_dir = _get_collection_persist_dir(collection_name, config)
 
     embeddings = get_embeddings(config)
@@ -78,7 +78,7 @@ def append_to_vector_store(
     config: RAGConfig | None = None,
 ) -> Chroma:
     """向已有 Chroma 向量库追加文档（不删除原有数据）。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     embeddings = get_embeddings(config)
     persist_dir = _get_collection_persist_dir(collection_name, config)
 

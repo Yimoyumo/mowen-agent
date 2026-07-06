@@ -82,12 +82,12 @@ npm run dev
 ```
 .
 ├── api.py                  # 启动入口
-├── config.json             # 全局配置（模块化分组）
+├── data/user_settings.json # 用户配置（首次运行自动生成）
 ├── pyproject.toml          # 依赖管理
 │
 ├── server/                 # 核心引擎包
 │   ├── __init__.py             公共 API
-│   ├── config.py               RAGConfig 配置（mtime 缓存）
+│   ├── config.py               RAGConfig 配置（从 user_settings 加载）
 │   ├── logging_config.py       日志模块（Logger 工厂 + 请求追踪）
 │   ├── llm.py                  LLM 厂商工厂（注册表模式）
 │   ├── embeddings.py           Embedding 模型
@@ -148,32 +148,37 @@ npm run dev
 
 ## 配置
 
-`config.json` 采用模块化分组：
+`data/user_settings.json` 是唯一配置文件，首次运行时自动生成默认配置。包含厂商管理、模型选择、生成参数、检索参数等：
 
 ```json
 {
-  "api_keys": {
-    "zhipuai": "your-key",
-    "deepseek": "your-key"
-  },
-  "model": {
-    "provider": "deepseek",
-    "chat": "deepseek-v4-flash",
-    "embedding": "embedding-3"
+  "active_model": "deepseek/deepseek-v4-flash",
+  "embedding_model": "zhipuai/embedding-3",
+  "providers": {
+    "deepseek": {
+      "name": "DeepSeek",
+      "preset": true,
+      "api_key": "",
+      "base_url": "https://api.deepseek.com/v1",
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro"]
+    }
   },
   "generation": {
     "temperature": 0.5,
-    "max_tokens": 4096,
-    "thinking": false
+    "max_tokens": null,
+    "streaming": false,
+    "thinking": true
   },
   "chunking": {
     "size": 500,
     "overlap": 50,
-    "chapter_split": false
+    "chapter_split": false,
+    "chapter_chunk_threshold": 1500,
+    "chapter_chunk_overlap": 200
   },
   "retrieval": {
     "top_k": 15,
-    "query_expansion": false
+    "query_expansion": true
   },
   "context": {
     "max_tokens": 0
@@ -207,8 +212,9 @@ npm run dev
 
 | 分组 | 说明 |
 |------|------|
-| `api_keys` | 各厂商 API Key（也支持环境变量） |
-| `model` | 模型选择：provider 切换 DeepSeek/智谱 |
+| `active_model` | 当前选中的模型，格式 `provider/model` |
+| `embedding_model` | Embedding 模型，格式 `provider/model` |
+| `providers` | 厂商配置：API Key、base_url、模型列表 |
 | `generation` | 生成参数：temperature、max_tokens、thinking 等 |
 | `chunking` | 文档切分：块大小、重叠、章节切分 |
 | `retrieval` | 检索参数：top_k、查询扩写 |
@@ -218,6 +224,8 @@ npm run dev
 | `skills` | 启用的技能列表，对应 skills/*.md 文件 |
 | `logging` | 日志级别、文件路径、按模块独立级别 |
 | `vector_store` | Chroma 持久化目录 |
+| `persona` | 人格设定文本 |
+| `user_profile` | 用户画像文本 |
 
 ## Agent 模式
 
@@ -261,7 +269,7 @@ Agent: → 不调用工具，直接回答
 | `rag.py` | RAG 问答提示词 | ChatPromptTemplate |
 | `query_expansion.py` | 查询扩写提示词 | PromptTemplate |
 
-Skills 技能文件位于 `skills/` 目录，Markdown 格式，通过 config.json 启用。
+Skills 技能文件位于 `skills/` 目录，Markdown 格式，通过 user_settings.json 启用。
 
 ### 添加新厂商
 
@@ -280,7 +288,7 @@ def _build_openai(config):
 - **Logger 工厂**：各模块通过 `get_logger(__name__)` 获取独立 Logger
 - **双输出**：控制台彩色 + 文件轮转（10MB × 5 份）
 - **请求追踪**：HTTP 中间件为每个请求生成 `request_id`，注入日志上下文
-- **模块级别**：通过 config.json 按模块名独立设置日志级别
+- **模块级别**：通过 user_settings.json 按模块名独立设置日志级别
 
 ```python
 from server.logging_config import get_logger
@@ -301,9 +309,9 @@ if not kb:
     raise NotFoundError("知识库不存在")
 ```
 
-### 配置缓存
+### 配置加载
 
-`RAGConfig.from_json()` 基于文件 mtime 缓存，文件未修改时直接返回缓存实例，避免重复 IO。修改 config.json 后自动失效，也可手动 `RAGConfig.reload()`。
+`RAGConfig.from_settings()` 从 `data/user_settings.json` 加载配置，首次运行时自动创建默认配置文件。前端通过 `/settings/providers` API 管理厂商和模型。
 
 ### 文件安全
 

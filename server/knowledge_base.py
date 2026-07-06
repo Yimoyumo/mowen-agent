@@ -2,25 +2,21 @@
 
 提供知识库的 CRUD、元数据持久化，以及与 Chroma collection 的映射。
 
-持久化安全：
-- 原子写入：先写临时文件，再 rename 覆盖，避免写入中途崩溃导致文件损坏
-- 文件锁：fcntl.flock 防止多进程/多请求并发写冲突
+持久化方式：SQLite 数据库（server/db.py）
+旧数据迁移：首次启动时自动从 knowledge_bases.json 导入。
 """
 
-import json
-import os
 import shutil
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from server.config import RAGConfig
+from server.db import db
 from server.logging_config import get_logger
 
 logger = get_logger(__name__)
-
-KB_META_FILE = "knowledge_bases.json"   # 知识库元数据持久化文件名
 
 
 # 知识库类型映射：key → 中文标签
@@ -38,7 +34,7 @@ DEFAULT_KB_TYPE = "general"
 class KnowledgeBase:
     """知识库元数据。
 
-    存储在 knowledge_bases.json 中，与 Chroma collection 一一对应。
+    存储在 SQLite knowledge_bases 表中，与 Chroma collection 一一对应。
     """
 
     id: str               # UUID 唯一标识
@@ -49,73 +45,25 @@ class KnowledgeBase:
     kb_type: str = DEFAULT_KB_TYPE  # novel/tech/project/general
 
 
-def _get_meta_path(config: RAGConfig | None = None) -> Path:
-    config = config or RAGConfig.from_json()
-    base_dir = Path(config.vector_store_dir)
-    base_dir.mkdir(parents=True, exist_ok=True)
-    return base_dir / KB_META_FILE
-
-
 def _sanitize_collection_name(kb_id: str) -> str:
     """Chroma collection 名称只允许字母数字下划线连字符。"""
     return f"kb_{kb_id.replace('-', '_')}"
 
 
 def load_knowledge_bases(config: RAGConfig | None = None) -> list[KnowledgeBase]:
-    """加载所有知识库元数据（带共享锁，防止读到写一半的数据）。"""
-    import fcntl
-
-    meta_path = _get_meta_path(config)
-    if not meta_path.exists():
-        return []
-
-    lock_path = meta_path.with_suffix(".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(lock_path, "w") as lock_file:
-        # 共享锁：允许并发读，但会被排他写锁阻塞
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-    return [KnowledgeBase(**item) for item in raw]
-
-
-def save_knowledge_bases(kbs: list[KnowledgeBase], config: RAGConfig | None = None) -> None:
-    """保存所有知识库元数据（原子写入 + 文件锁）。
-
-    安全措施：
-    1. 文件锁：fcntl.flock 防止多进程/多请求并发写冲突
-    2. 原子写入：先写临时文件，rename 覆盖，避免写入中途崩溃导致文件损坏
-    """
-    import fcntl
-
-    meta_path = _get_meta_path(config)
-    lock_path = meta_path.with_suffix(".lock")
-
-    # 确保目录存在
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # 写入临时文件 → rename 覆盖（原子操作）
-    tmp_path = meta_path.with_suffix(".tmp")
-    data = json.dumps([asdict(kb) for kb in kbs], ensure_ascii=False, indent=2)
-
-    with open(lock_path, "w") as lock_file:
-        # 排他锁：阻塞等待其他进程释放
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                f.write(data)
-                f.flush()
-                os.fsync(f.fileno())  # 确保写入磁盘
-
-            # rename 是原子操作：要么成功覆盖，要么原文件不变
-            os.replace(str(tmp_path), str(meta_path))
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # 释放锁
+    """加载所有知识库元数据。"""
+    rows = db.execute("SELECT * FROM knowledge_bases ORDER BY created_at").fetchall()
+    return [
+        KnowledgeBase(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+            created_at=row["created_at"],
+            collection_name=row["collection_name"],
+            kb_type=row["kb_type"],
+        )
+        for row in rows
+    ]
 
 
 def create_knowledge_base(
@@ -129,8 +77,6 @@ def create_knowledge_base(
     if kb_type not in KB_TYPES:
         kb_type = DEFAULT_KB_TYPE
 
-    kbs = load_knowledge_bases(config)
-
     kb_id = str(uuid.uuid4())
     kb = KnowledgeBase(
         id=kb_id,
@@ -141,8 +87,15 @@ def create_knowledge_base(
         kb_type=kb_type,
     )
 
-    kbs.append(kb)
-    save_knowledge_bases(kbs, config)
+    db.execute(
+        """INSERT INTO knowledge_bases
+           (id, name, description, kb_type, collection_name, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (kb.id, kb.name, kb.description, kb.kb_type, kb.collection_name, kb.created_at),
+    )
+    db.commit()
+
+    logger.info("知识库已创建: %s (%s)", kb.name, kb.id)
     return kb
 
 
@@ -151,28 +104,41 @@ def get_knowledge_base(
     config: RAGConfig | None = None,
 ) -> KnowledgeBase | None:
     """根据 ID 获取知识库。"""
-    for kb in load_knowledge_bases(config):
-        if kb.id == kb_id:
-            return kb
-    return None
+    row = db.execute(
+        "SELECT * FROM knowledge_bases WHERE id = ?",
+        (kb_id,),
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    return KnowledgeBase(
+        id=row["id"],
+        name=row["name"],
+        description=row["description"],
+        created_at=row["created_at"],
+        collection_name=row["collection_name"],
+        kb_type=row["kb_type"],
+    )
 
 
 def delete_knowledge_base(kb_id: str, config: RAGConfig | None = None) -> bool:
     """删除知识库及其 Chroma collection。"""
-    kbs = load_knowledge_bases(config)
-    target = next((kb for kb in kbs if kb.id == kb_id), None)
-    if target is None:
+    kb = get_knowledge_base(kb_id, config)
+    if kb is None:
         return False
 
-    kbs.remove(target)
-    save_knowledge_bases(kbs, config)
+    # 删除数据库记录
+    db.execute("DELETE FROM knowledge_bases WHERE id = ?", (kb_id,))
+    db.commit()
 
     # 删除 collection 持久化目录
-    config = config or RAGConfig.from_json()
-    collection_dir = Path(config.vector_store_dir) / "chroma" / target.collection_name
+    config = config or RAGConfig.from_settings()
+    collection_dir = Path(config.vector_store_dir) / "chroma" / kb.collection_name
     if collection_dir.exists():
         shutil.rmtree(collection_dir, ignore_errors=True)
 
+    logger.info("知识库已删除: %s (%s)", kb.name, kb.id)
     return True
 
 
@@ -182,7 +148,7 @@ def ensure_default_knowledge_base(config: RAGConfig | None = None) -> KnowledgeB
     if kbs:
         return kbs[0]
 
-    return create_knowledge_base("默认知识库", "系统自动创建的默认知识库", config)
+    return create_knowledge_base("默认知识库", "系统自动创建的默认知识库")
 
 
 def get_kb_type_label(kb_type: str) -> str:

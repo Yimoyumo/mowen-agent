@@ -34,7 +34,7 @@ def build_vector_store_from_directory(
     config: RAGConfig | None = None,
 ) -> None:
     """从文档目录构建并保存向量库。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     logger.info("正在加载文档: %s", dir_path)
     documents = load_directory(dir_path)
     logger.info("共加载 %d 个文件", len(documents))
@@ -49,7 +49,7 @@ def build_vector_store_from_documents(
     config: RAGConfig | None = None,
 ) -> None:
     """从文档对象列表构建并保存向量库。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
 
     logger.info("正在按 [%s] 策略切分文档...", kb_type)
     chunks = split_documents_by_type(documents, kb_type, config)
@@ -67,7 +67,7 @@ def append_documents_to_knowledge_base(
     config: RAGConfig | None = None,
 ) -> None:
     """向指定知识库追加文档。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
 
     logger.info("正在按 [%s] 策略切分追加文档...", kb_type)
     chunks = split_documents_by_type(documents, kb_type, config)
@@ -94,7 +94,7 @@ async def ask_stream(question: str, kb_id: str | None = None, config: RAGConfig 
         - {"type": "token", "token": "..."}
         - {"type": "done"}
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     chain = get_rag_streaming_chain(kb_id, config)
 
     result = await chain.ainvoke({"input": question})

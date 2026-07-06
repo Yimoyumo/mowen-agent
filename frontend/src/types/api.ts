@@ -87,6 +87,25 @@ export interface ConfigResponse {
   chapter_chunk_threshold: number
   chapter_chunk_overlap: number
   enable_query_expansion: boolean
+  context_window: number
+  max_output: number
+  temperature: number
+  max_tokens: number | null
+  thinking: boolean
+  reasoning_effort: string | null
+}
+
+export interface ModelContextInfo {
+  model: string
+  context_window: number
+  max_output: number
+  source?: 'override' | 'builtin' | 'unknown'
+  generation_override?: {
+    temperature?: number
+    max_tokens?: number | null
+    thinking?: boolean
+    reasoning_effort?: string | null
+  }
 }
 
 export interface BuildResponse {
@@ -103,19 +122,20 @@ export interface HealthResponse {
 export type StreamEvent =
   | { type: 'contexts'; contexts: string[] }
   | { type: 'reasoning'; token: string }
-  | { type: 'token'; token: string }
+  | { type: 'token'; token: string; input_tokens?: number; output_tokens?: number; context_window?: number }
   | { type: 'tool_start'; tool: string; input: string }
   | { type: 'tool_end'; tool: string; output: string }
-  | { type: 'done' }
+  | { type: 'done'; input_tokens?: number; output_tokens?: number; context_window?: number }
   | { type: 'error'; message: string }
 
 export interface StreamingChatCallbacks {
   onContexts?: (contexts: string[]) => void
   onReasoning?: (token: string) => void
   onToken?: (token: string) => void
+  onTokenStats?: (stats: { input_tokens: number; output_tokens: number; context_window: number }) => void
   onToolStart?: (tool: string, input: string) => void
   onToolEnd?: (tool: string, output: string) => void
-  onDone?: () => void
+  onDone?: (stats?: { input_tokens: number; output_tokens: number; context_window: number }) => void
   onError?: (message: string) => void
 }
 
@@ -131,4 +151,81 @@ export interface CreateKnowledgeBaseRequest {
   name: string
   description?: string
   kb_type?: string
+}
+
+// ==================== 用户设置类型 ====================
+
+export interface UserSettings {
+  model: {
+    provider: string
+    chat_model: string
+    models_cache: Record<string, string[]>
+    providers: Record<string, ProviderConfig>
+  }
+  retrieval: {
+    top_k: number
+    query_expansion: boolean | null
+  }
+  generation: {
+    temperature: number | null
+    max_tokens: number | null
+  }
+  persona: {
+    enabled: boolean
+    content: string
+  }
+  user_profile: {
+    skills: string
+    interests: string
+    preferences: string
+  }
+  updated_at: string | null
+}
+
+export interface ProviderConfig {
+  api_key: string
+  base_url?: string
+  name?: string
+}
+
+export interface ProviderInfo {
+  id: string
+  name: string
+  base_url: string
+  desc: string
+  preset: boolean
+  has_api_key: boolean
+  models: string[]
+}
+
+export interface ProvidersResponse {
+  providers: ProviderInfo[]
+  active_model: string           // "provider/model" e.g. "deepseek/deepseek-v4-flash"
+}
+
+export interface FetchModelsResult {
+  status: string
+  models: string[]
+  count?: number
+  message?: string
+}
+
+export interface UserProfile {
+  skills: string
+  interests: string
+  preferences: string
+}
+
+export interface MemoryItem {
+  id: string
+  type: string
+  content: string
+  created_at?: string
+  hit_count?: number
+  last_used?: string | null
+}
+
+export interface MemoryResponse {
+  memories: MemoryItem[]
+  total: number
 }

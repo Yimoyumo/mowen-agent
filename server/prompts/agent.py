@@ -174,7 +174,7 @@ def get_skills_section(config: RAGConfig | None = None) -> str:
     Skills 是外部 .md 文件，通过 skills.py 加载后拼接为提示词段落。
     返回空字符串表示无技能。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     skills_prompt = load_skills(config.skills or [])
     if not skills_prompt:
         return ""
@@ -190,13 +190,64 @@ def get_uploaded_files_section(uploaded_info: str) -> str:
     return f"\n\n{uploaded_info}"
 
 
+def get_persona_section(persona_prompt: str = "") -> str:
+    """获取人格设定段落，注入 system prompt 开头。
+
+    用户可自定义 Agent 的角色描述，如"你是一个猫娘助手"。
+    如果未启用则为空字符串。
+
+    Args:
+        persona_prompt: 从 UserSettings.get_persona_prompt() 获取
+
+    Returns:
+        人格设定文本（空字符串表示未启用）
+    """
+    if not persona_prompt:
+        return ""
+    return f"\n\n## 角色设定\n\n{persona_prompt}\n"
+
+
+def get_profile_section(profile_prompt: str = "") -> str:
+    """获取用户画像段落，注入 system prompt。
+
+    用户手动填写的技能、兴趣、偏好。
+
+    Args:
+        profile_prompt: 从 UserSettings.get_profile_prompt() 获取
+
+    Returns:
+        用户画像文本（空字符串表示无内容）
+    """
+    if not profile_prompt:
+        return ""
+    return "\n\n" + profile_prompt
+
+
+def get_memory_section(memory_prompt: str = "") -> str:
+    """获取记忆段落，注入 system prompt。
+
+    Args:
+        memory_prompt: 从 MemoryStore.get_prompt() 获取的记忆文本
+
+    Returns:
+        记忆段落文本（空字符串表示无记忆）
+    """
+    if not memory_prompt:
+        return ""
+    return "\n\n" + memory_prompt
+
+
 # ==================== 统一组装函数 ====================
 
 # 完整系统提示词模板（含动态段落占位）
+# 拼接顺序：核心静态 → 人格设定 → 技能 → 时间 → 记忆 → 用户画像 → 上传文件
 _FULL_SYSTEM_TEMPLATE = PromptTemplate.from_template(
     _CORE_SYSTEM_PROMPT
+    + "\n\n{persona}"
     + "\n\n{skills}"
     + "\n\n{time}"
+    + "\n\n{memory}"
+    + "\n\n{profile}"
     + "\n\n{uploaded}"
 )
 
@@ -204,24 +255,36 @@ _FULL_SYSTEM_TEMPLATE = PromptTemplate.from_template(
 def get_agent_system_prompt(
     config: RAGConfig | None = None,
     uploaded_info: str = "",
+    memory_prompt: str = "",
+    persona_prompt: str = "",
+    profile_prompt: str = "",
 ) -> str:
     """组装完整的 Agent 系统提示词。
 
     按以下顺序拼接：
     1. 核心静态段落（身份 + 工具 + 沙盒 + 原则 + 输出规范）
-    2. 技能段落（动态，来自 skills/ 目录）
-    3. 当前时间段落（动态）
-    4. 上传文件信息段落（动态，可选）
+    2. 人格设定段落（动态，用户自定义角色）
+    3. 技能段落（动态，来自 skills/ 目录）
+    4. 当前时间段落（动态）
+    5. 记忆段落（动态，来自 MemoryStore）
+    6. 用户画像段落（动态，来自 UserSettings）
+    7. 上传文件信息段落（动态，可选）
 
     Args:
         config: RAG 配置（用于读取启用的技能列表）
         uploaded_info: 上传文件信息文本
+        memory_prompt: 记忆提示词文本
+        persona_prompt: 人格设定文本
+        profile_prompt: 用户画像文本
 
     Returns:
         完整的系统提示词字符串
     """
     return _FULL_SYSTEM_TEMPLATE.format(
+        persona=get_persona_section(persona_prompt),
         skills=get_skills_section(config),
         time=get_time_section(),
+        memory=get_memory_section(memory_prompt),
+        profile=get_profile_section(profile_prompt),
         uploaded=get_uploaded_files_section(uploaded_info),
     )

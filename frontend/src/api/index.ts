@@ -12,3 +12,23 @@ export {
   uploadDocumentToKnowledgeBase,
 } from './knowledgeBaseApi'
 export { chatStream, askQuestion, askQuestionStream } from './chat'
+
+// 用户设置
+export {
+  getSettings,
+  updateSettings,
+  resetSettings,
+  getProviders,
+  updateProvider,
+  addCustomProvider,
+  deleteCustomProvider,
+  fetchProviderModels,
+  setCurrentModel,
+  getProfile,
+  updateProfile,
+  getMemories,
+  addMemory,
+  updateMemory,
+  deleteMemory,
+  clearMemories,
+} from './settingsApi'

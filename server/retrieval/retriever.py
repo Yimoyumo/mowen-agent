@@ -127,7 +127,7 @@ def expand_and_retrieve(
     Returns:
         检索到的相关文档列表，数量不超过 config.top_k。
     """
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     vector_store = load_vector_store(collection_name, config)
     retriever = vector_store.as_retriever(search_kwargs={"k": config.top_k})
 
@@ -169,6 +169,6 @@ def expand_and_retrieve(
 
 def get_retriever(collection_name: str = "default", config: RAGConfig | None = None):
     """返回基础检索器（兼容旧接口）。"""
-    config = config or RAGConfig.from_json()
+    config = config or RAGConfig.from_settings()
     vector_store = load_vector_store(collection_name, config)
     return vector_store.as_retriever(search_kwargs={"k": config.top_k})

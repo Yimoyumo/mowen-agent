@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.models import ConfigResponse
-from server.config import RAGConfig
+from app.models import ConfigResponse, ModelContextInfo
+from server.user_settings import user_settings, build_config
 
 router = APIRouter()
 
@@ -16,8 +16,9 @@ def health() -> dict:
 
 @router.get("/config", response_model=ConfigResponse)
 def config_endpoint() -> ConfigResponse:
-    """获取当前系统配置（只读，从 config.json 加载）。"""
-    cfg = RAGConfig.from_json()
+    """获取当前系统配置（只读，从 user_settings 加载）。"""
+    cfg = build_config(user_settings.load())
+    info = cfg.get_active_model_info()
     return ConfigResponse(
         chat_provider=cfg.chat_provider,
         chat_model=cfg.chat_model,
@@ -29,4 +30,10 @@ def config_endpoint() -> ConfigResponse:
         chapter_chunk_threshold=cfg.chapter_chunk_threshold,
         chapter_chunk_overlap=cfg.chapter_chunk_overlap,
         enable_query_expansion=cfg.enable_query_expansion,
+        context_window=info["context_window"],
+        max_output=info["max_output"],
+        temperature=cfg.temperature,
+        max_tokens=cfg.max_tokens,
+        thinking=cfg.enable_thinking,
+        reasoning_effort=cfg.reasoning_effort,
     )

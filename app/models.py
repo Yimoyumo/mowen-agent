@@ -76,3 +76,16 @@ class ConfigResponse(BaseModel):
     chapter_chunk_threshold: int     # 章节切分阈值
     chapter_chunk_overlap: int       # 章节切分重叠
     enable_query_expansion: bool    # 是否开启查询扩写
+    context_window: int = 0         # 当前模型的上下文窗口大小（token）
+    max_output: int = 0             # 当前模型的最大输出 token 数
+    temperature: float = 0.5        # 生成温度
+    max_tokens: int | None = None   # 最大输出 token 数（generation）
+    thinking: bool = True           # 是否开启思考模式
+    reasoning_effort: str | None = None  # 推理强度: low/medium/high
+
+
+class ModelContextInfo(BaseModel):
+    """模型上下文窗口信息。"""
+    model: str                      # 模型 ref，如 "deepseek/deepseek-v4-flash"
+    context_window: int             # 上下文窗口大小（token）
+    max_output: int                 # 最大输出 token 数

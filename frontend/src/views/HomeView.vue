@@ -7,14 +7,20 @@ import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
 import { useChatStore } from '@/stores/chat'
+import { useSettings } from '@/composables/useSettings'
+import { updateSettings } from '@/api/settingsApi'
+import { getConfig } from '@/api/configApi'
+import { ElMessage } from 'element-plus'
 
 const { config, isReady } = useConfig()
+const { settings: us, providers, handleSelectModel } = useSettings()
 const {
   question,
   loading,
   streaming,
   streamEnabled,
   showReasoning,
+  tokenStats,
   messages,
   currentConversation,
   conversations,
@@ -52,6 +58,46 @@ function handleRemoveConversation(id: string) {
 function handleClearConversations() {
   clearAllConversations()
 }
+
+// 只收集有 API Key 的厂商的模型
+const modelOptions = computed(() => {
+  if (!providers.value) return []
+  const opts: string[] = []
+  for (const p of providers.value.providers) {
+    if (!p.has_api_key) continue
+    for (const m of p.models) {
+      opts.push(`${p.id}/${m}`)
+    }
+  }
+  return opts
+})
+
+const activeModel = computed(() => providers.value?.active_model || '')
+
+function handleSwitchModel(ref: string) {
+  handleSelectModel(ref)
+}
+
+// 更新思考模式 / 推理强度 → 保存到 settings 并刷新 config
+async function handleUpdateThinking(val: boolean) {
+  if (config.value) config.value.thinking = val
+  try {
+    await updateSettings({ generation: { thinking: val } })
+    config.value = await getConfig()
+  } catch {
+    ElMessage.error('保存失败')
+  }
+}
+
+async function handleUpdateReasoningEffort(val: string) {
+  if (config.value) config.value.reasoning_effort = val
+  try {
+    await updateSettings({ generation: { reasoning_effort: val } })
+    config.value = await getConfig()
+  } catch {
+    ElMessage.error('保存失败')
+  }
+}
 </script>
 
 <template>
@@ -88,12 +134,18 @@ function handleClearConversations() {
         :knowledge-bases="kbManager.store.knowledgeBases"
         :current-kb-id="kbManager.store.currentKbId"
         :config="config"
+        :model-options="modelOptions"
+        :active-model="activeModel"
+        :token-stats="tokenStats"
         @send="(files: any) => sendMessage(undefined, files)"
         @stop="stopStreaming"
         @select-example="setQuestion"
         @select-kb="kbManager.selectKb"
         @toggle-context="toggleContext"
         @new-conversation="createNewConversation"
+        @select-model="handleSwitchModel"
+        @update:thinking="handleUpdateThinking"
+        @update:reasoning-effort="handleUpdateReasoningEffort"
       />
     </div>
 

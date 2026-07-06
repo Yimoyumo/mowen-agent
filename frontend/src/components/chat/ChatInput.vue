@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { apiClient } from '@/api/config'
+import { get_model_context } from '@/api/configApi'
 
 const MAX_CHARS = 8000   // 单条消息最大字符数，超过自动转文件
 
@@ -11,20 +12,57 @@ interface Props {
   disabled: boolean
   knowledgeBases: { id: string; name: string }[]
   currentKbId: string | null
+  modelOptions?: string[]
+  activeModel?: string
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  modelOptions: () => [],
+  activeModel: '',
+})
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   send: [uploadedFiles: { token: string; filename: string }[]]
   stop: []
   selectKb: [kbId: string]
+  selectModel: [modelRef: string]
 }>()
 
 const charCount = computed(() => props.modelValue.length)
 const isOverLimit = computed(() => charCount.value > MAX_CHARS)
 const hasContent = computed(() => props.modelValue.trim().length > 0)
 const canSend = computed(() => hasContent.value && !props.loading && !props.disabled)
+
+// 当前模型的上下文窗口信息
+const modelCtx = ref<{ context_window: number; max_output: number }>({ context_window: 0, max_output: 0 })
+
+async function loadModelCtx(modelRef: string) {
+  if (!modelRef) {
+    modelCtx.value = { context_window: 0, max_output: 0 }
+    return
+  }
+  try {
+    const info = await get_model_context(modelRef)
+    modelCtx.value = { context_window: info.context_window, max_output: info.max_output }
+  } catch {
+    modelCtx.value = { context_window: 0, max_output: 0 }
+  }
+}
+
+watch(() => props.activeModel, (m) => loadModelCtx(m), { immediate: true })
+
+// 格式化 token 数为可读文字
+function fmtTokens(n: number): string {
+  if (n <= 0) return ''
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+  if (n >= 1000) return `${Math.round(n / 1024)}K`
+  return String(n)
+}
+
+// 为每个模型选项生成 label（附带上下文窗口大小）
+function modelLabel(m: string): string {
+  return m
+}
 
 // 文件上传
 const uploadedFiles = ref<{ token: string; filename: string; size: number }[]>([])
@@ -36,7 +74,7 @@ async function handleFileChange(e: Event) {
   if (!files) return
 
   uploading.value = true
-  for (const file of files) {
+  for (const file of Array.from(files)) {
     try {
       const form = new FormData()
       form.append('file', file)
@@ -70,7 +108,7 @@ function handleKeydown(e: KeyboardEvent) {
 async function uploadTextAsFile(text: string): Promise<{ token: string; filename: string } | null> {
   const blob = new Blob([text], { type: 'text/plain' })
   // generate a meaningful filename from first few words
-  const firstLine = text.trim().split(/\n/)[0].slice(0, 40).replace(/[^\w\u4e00-\u9fff]/g, '_')
+  const firstLine = (text.trim().split(/\n/)[0] ?? '').slice(0, 40).replace(/[^\w\u4e00-\u9fff]/g, '_')
   const filename = `message_${firstLine || 'long_text'}.txt`
   const file = new File([blob], filename, { type: 'text/plain' })
   try {
@@ -96,7 +134,7 @@ async function doSend() {
     const summary = text.slice(0, 200).trim() + '…（完整内容已转为附件文件）'
     const uploaded = await uploadTextAsFile(text)
     if (uploaded) {
-      files.push(uploaded)
+      files.push({ ...uploaded, size: 0 })
     }
     emit('update:modelValue', summary)
     // 先清空输入框
@@ -141,18 +179,36 @@ async function doSend() {
       </div>
       <div class="chat-toolbar">
         <div class="toolbar-left">
-          <!-- 文件上传按钮 -->
+          <!-- 文件上传 -->
           <label class="upload-btn" :class="{ active: uploading }">
             <el-icon><Upload /></el-icon>
-            <input
-              type="file"
-              multiple
-              hidden
-              :disabled="disabled || loading"
-              @change="handleFileChange"
-            />
+            <input type="file" multiple hidden :disabled="disabled || loading" @change="handleFileChange" />
           </label>
 
+          <!-- 模型切换 -->
+          <el-select
+            v-if="modelOptions.length > 0"
+            :model-value="activeModel"
+            size="small"
+            class="model-select"
+            popper-class="model-select-popper"
+            @change="(val: string) => emit('selectModel', val)"
+          >
+            <template #label>
+              <span class="model-label-text">{{ activeModel.split('/').pop() || activeModel }}</span>
+              <span v-if="modelCtx.context_window > 0" class="model-ctx-badge">
+                {{ fmtTokens(modelCtx.context_window) }}
+              </span>
+            </template>
+            <el-option
+              v-for="m in modelOptions"
+              :key="m"
+              :label="m"
+              :value="m"
+            />
+          </el-select>
+
+          <!-- 知识库选择 -->
           <el-select
             v-if="knowledgeBases.length > 0"
             :model-value="currentKbId"
@@ -332,6 +388,42 @@ async function doSend() {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.model-select {
+  width: 220px;
+}
+
+.model-select :deep(.el-select__selection-wrapper) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.model-label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.model-ctx-badge {
+  font-size: 11px;
+  color: #409eff;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ctx-info {
+  font-size: 11px;
+  color: #909399;
+  white-space: nowrap;
 }
 
 .kb-select {

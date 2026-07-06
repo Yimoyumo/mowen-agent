@@ -16,25 +16,50 @@ import type { ChatMessage as ChatMessageType, ConfigResponse } from '@/types/api
   config: ConfigResponse | null
   streamEnabled: boolean
   showReasoning: boolean
+  modelOptions?: string[]
+  activeModel?: string
+  tokenStats?: { input_tokens: number; output_tokens: number; context_window: number } | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   config: null,
+  modelOptions: () => [],
+  activeModel: '',
+  tokenStats: null,
 })
 const emit = defineEmits<{
   'update:question': [value: string]
   'update:streamEnabled': [value: boolean]
   'update:showReasoning': [value: boolean]
+  'update:thinking': [value: boolean]
+  'update:reasoningEffort': [value: string]
   send: [uploadedFiles: { token: string; filename: string }[]]
   stop: []
   selectExample: [question: string]
   selectKb: [kbId: string]
+  selectModel: [modelRef: string]
   toggleContext: []
   newConversation: []
 }>()
 
 const hasMessages = computed(() => props.messages.length > 0)
 const messagesRef = ref<HTMLElement | null>(null)
+
+// Token 用量展示
+const tokenUsageColor = computed(() => {
+  if (!props.tokenStats || props.tokenStats.context_window <= 0) return '#409eff'
+  const ratio = (props.tokenStats.input_tokens + props.tokenStats.output_tokens) / props.tokenStats.context_window
+  if (ratio > 0.9) return '#f56c6c'
+  if (ratio > 0.7) return '#e6a23c'
+  return '#67c23a'
+})
+
+function fmtTokens(n: number): string {
+  if (n <= 0) return '0'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${Math.round(n / 1024)}K`
+  return String(n)
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -61,6 +86,23 @@ defineExpose({ scrollToBottom })
         </button>
       </div>
       <div class="topbar-right">
+        <!-- Token 用量提示 -->
+        <div v-if="tokenStats" class="token-usage" :title="`输入 ${tokenStats.input_tokens} + 输出 ${tokenStats.output_tokens} = ${tokenStats.input_tokens + tokenStats.output_tokens} tokens`">
+          <template v-if="tokenStats.context_window > 0">
+            <span class="token-usage-label">上下文</span>
+            <el-progress
+              :percentage="Math.min(100, Math.round((tokenStats.input_tokens + tokenStats.output_tokens) / tokenStats.context_window * 100))"
+              :stroke-width="6"
+              :show-text="false"
+              :color="tokenUsageColor"
+              style="width: 60px"
+            />
+            <span class="token-usage-text">{{ fmtTokens(tokenStats.input_tokens + tokenStats.output_tokens) }} / {{ fmtTokens(tokenStats.context_window) }}</span>
+          </template>
+          <template v-else>
+            <span class="token-usage-text">{{ fmtTokens(tokenStats.input_tokens + tokenStats.output_tokens) }} tokens</span>
+          </template>
+        </div>
         <button
           v-if="hasMessages && messages.some(m => m.contexts && m.contexts.length > 0)"
           class="topbar-btn"
@@ -77,29 +119,27 @@ defineExpose({ scrollToBottom })
             </button>
           </template>
           <div class="config-popover">
-            <div class="config-popover-title">当前配置</div>
-            <div class="config-popover-grid">
-              <div class="config-popover-item">
-                <span class="config-popover-label">对话厂商</span>
-                <span class="config-popover-value">{{ config.chat_provider }}</span>
+            <div class="config-popover-switches">
+              <div class="config-popover-switch-item">
+                <span class="config-popover-label">思考模式</span>
+                <el-switch
+                  :model-value="config.thinking"
+                  size="small"
+                  @update:model-value="emit('update:thinking', $event as boolean)"
+                />
               </div>
-              <div class="config-popover-item">
-                <span class="config-popover-label">对话模型</span>
-                <span class="config-popover-value">{{ config.chat_model }}</span>
-              </div>
-              <div class="config-popover-item">
-                <span class="config-popover-label">Embedding</span>
-                <span class="config-popover-value">{{ config.embedding_model }}</span>
-              </div>
-              <div class="config-popover-item">
-                <span class="config-popover-label">top_k</span>
-                <span class="config-popover-value">{{ config.top_k }}</span>
-              </div>
-              <div class="config-popover-item">
-                <span class="config-popover-label">查询扩写</span>
-                <el-tag :type="config.enable_query_expansion ? 'success' : 'info'" size="small">
-                  {{ config.enable_query_expansion ? '开启' : '关闭' }}
-                </el-tag>
+              <div class="config-popover-switch-item" v-if="config.thinking">
+                <span class="config-popover-label">推理强度</span>
+                <el-select
+                  :model-value="config.reasoning_effort || 'medium'"
+                  size="small"
+                  style="width: 100px"
+                  @change="(v: string) => emit('update:reasoningEffort', v)"
+                >
+                  <el-option label="低" value="low" />
+                  <el-option label="中" value="medium" />
+                  <el-option label="高" value="high" />
+                </el-select>
               </div>
             </div>
 
@@ -137,7 +177,7 @@ defineExpose({ scrollToBottom })
           :key="msg.id"
           :type="msg.role"
           :content="msg.content"
-          :streaming="streaming && msg.id === messages[messages.length - 1].id"
+          :streaming="streaming && msg.id === messages.at(-1)?.id"
           :contexts="msg.contexts"
           :reasoning="msg.reasoning"
           :segments="msg.segments"
@@ -152,10 +192,13 @@ defineExpose({ scrollToBottom })
       :disabled="disabled"
       :knowledge-bases="knowledgeBases"
       :current-kb-id="currentKbId"
+      :model-options="modelOptions"
+      :active-model="activeModel"
       @update:model-value="emit('update:question', $event)"
       @send="(files: any) => emit('send', files)"
       @stop="emit('stop')"
       @select-kb="emit('selectKb', $event)"
+      @select-model="emit('selectModel', $event)"
     />
   </main>
 </template>
@@ -185,6 +228,26 @@ defineExpose({ scrollToBottom })
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.token-usage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #909399;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f5f7fa;
+}
+
+.token-usage-label {
+  color: #909399;
+}
+
+.token-usage-text {
+  color: #606266;
+  font-variant-numeric: tabular-nums;
 }
 
 .topbar-btn {

@@ -1,0 +1,130 @@
+/** 用户设置 API */
+
+import { apiClient } from './config'
+import type {
+  UserSettings,
+  ProvidersResponse,
+  ProviderInfo,
+  FetchModelsResult,
+  UserProfile,
+  MemoryResponse,
+  MemoryItem,
+} from '@/types/api'
+
+// ==================== 用户设置 ====================
+
+export async function getSettings(): Promise<UserSettings> {
+  const { data } = await apiClient.get<UserSettings>('/settings')
+  return data
+}
+
+export async function updateSettings(updates: Partial<UserSettings>): Promise<UserSettings> {
+  const { data } = await apiClient.put<{ status: string; settings: UserSettings }>('/settings', updates)
+  return data.settings
+}
+
+export async function resetSettings(): Promise<UserSettings> {
+  const { data } = await apiClient.post<{ status: string; settings: UserSettings }>('/settings/reset')
+  return data.settings
+}
+
+// ==================== 厂商管理 ====================
+
+export async function getProviders(): Promise<ProvidersResponse> {
+  const { data } = await apiClient.get<ProvidersResponse>('/settings/providers')
+  return data
+}
+
+export async function updateProvider(
+  providerId: string,
+  apiKey?: string,
+  baseUrl?: string,
+): Promise<void> {
+  await apiClient.put(`/settings/providers/${providerId}`, {
+    api_key: apiKey || '',
+    base_url: baseUrl || '',
+  })
+}
+
+export async function addCustomProvider(name: string, baseUrl: string, apiKey?: string): Promise<ProviderInfo> {
+  const { data } = await apiClient.post<{ status: string; provider: ProviderInfo }>(
+    '/settings/providers',
+    { name, base_url: baseUrl, api_key: apiKey || '' },
+  )
+  return data.provider
+}
+
+export async function deleteCustomProvider(providerId: string): Promise<void> {
+  await apiClient.delete(`/settings/providers/${providerId}`)
+}
+
+export async function fetchProviderModels(
+  providerId: string,
+  apiKey?: string,
+): Promise<FetchModelsResult> {
+  const { data } = await apiClient.post<FetchModelsResult>(
+    `/settings/providers/${providerId}/fetch`,
+    { api_key: apiKey || '' },
+  )
+  return data
+}
+
+export interface TestResult {
+  ok: boolean
+  latency_ms?: number
+  response_preview?: string
+  error?: string
+}
+
+export async function testModel(
+  providerId: string,
+  model: string,
+): Promise<TestResult> {
+  const { data } = await apiClient.post<TestResult>(
+    `/settings/providers/${providerId}/test`,
+    { model },
+  )
+  return data
+}
+
+export async function setCurrentModel(modelRef: string): Promise<void> {
+  await apiClient.put('/settings/model', { model: modelRef })
+}
+
+// ==================== 用户画像 ====================
+
+export async function getProfile(): Promise<UserProfile> {
+  const { data } = await apiClient.get<UserProfile>('/settings/profile')
+  return data
+}
+
+export async function updateProfile(profile: UserProfile): Promise<UserProfile> {
+  const { data } = await apiClient.put<{ status: string; profile: UserProfile }>(
+    '/settings/profile',
+    profile,
+  )
+  return data.profile
+}
+
+// ==================== 记忆管理 ====================
+
+export async function getMemories(): Promise<MemoryResponse> {
+  const { data } = await apiClient.get<MemoryResponse>('/memories')
+  return data
+}
+
+export async function addMemory(type: string, content: string): Promise<void> {
+  await apiClient.post('/memories', { type, content })
+}
+
+export async function updateMemory(id: string, type: string, content: string): Promise<void> {
+  await apiClient.put(`/memories/${id}`, { type, content })
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  await apiClient.delete(`/memories/${id}`)
+}
+
+export async function clearMemories(): Promise<void> {
+  await apiClient.delete('/memories')
+}
