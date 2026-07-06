@@ -1,12 +1,24 @@
 """RAG 配置模块。
 
 从 config.json 读取模型、API Key 等配置，提供统一的配置访问入口。
+
+特性：
+- 基于 mtime 的缓存：文件未修改时直接返回缓存，避免重复 IO
+- 开发环境友好：config.json 改动后自动失效（uvicorn --reload 重载时也会重新读取）
+- 手动刷新：调用 RAGConfig.reload() 可强制刷新缓存
 """
 
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+
+# ==================== 配置缓存 ====================
+
+# 缓存：(RAGConfig 实例, 文件 mtime, 文件路径)
+# 文件 mtime 变化时自动失效，无需手动管理
+_config_cache: tuple["RAGConfig", float, str] | None = None
 
 
 @dataclass
@@ -53,25 +65,65 @@ class RAGConfig:
     # ---- Agent 配置 ----
     tavily_api_key: str = ""                  # Tavily 联网搜索 API Key
 
+    # ---- MCP 配置 ----
+    mcp_servers: dict = None                 # MCP 服务器配置 {name: {command, args, transport}}
+
+    # ---- Skills 配置 ----
+    skills: list = None                      # 启用的技能列表 ["data_analysis", ...]
+
+    # ---- 日志配置 ----
+    logging: dict = None                     # 日志配置 {level, file, modules, ...}
+
     @classmethod
     def from_json(cls, path: str | Path = "config.json") -> "RAGConfig":
-        """从 JSON 配置文件加载配置。
+        """从 JSON 配置文件加载配置（带 mtime 缓存）。
+
+        文件未修改时直接返回缓存实例，避免重复 IO。
+        文件修改后自动失效并重新读取。
 
         支持两种格式：
         1. 模块化格式（推荐）：api_keys / model / generation / chunking / retrieval / context
         2. 扁平格式（旧版兼容）：所有 key 平铺在一层
+
+        Args:
+            path: 配置文件路径，默认 "config.json"
         """
+        global _config_cache
+
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"配置文件不存在: {path.absolute()}")
 
+        # 检查缓存：路径相同 + 文件未修改 → 直接返回缓存
+        current_mtime = path.stat().st_mtime
+        if _config_cache is not None:
+            cached_config, cached_mtime, cached_path = _config_cache
+            if cached_path == str(path) and cached_mtime == current_mtime:
+                return cached_config
+
+        # 缓存未命中或文件已修改 → 重新读取
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         # 检测格式：有 "model" 嵌套 key 为模块化格式，否则为扁平格式
         if "model" in data:
-            return cls._from_nested(data)
-        return cls._from_flat(data)
+            config = cls._from_nested(data)
+        else:
+            config = cls._from_flat(data)
+
+        # 更新缓存
+        _config_cache = (config, current_mtime, str(path))
+        return config
+
+    @classmethod
+    def reload(cls) -> "RAGConfig":
+        """强制刷新配置缓存，重新读取 config.json。
+
+        用于运行时修改配置后立即生效（无需重启服务）。
+        """
+        global _config_cache
+        _config_cache = None
+        return cls.from_json()
 
     @classmethod
     def _from_nested(cls, data: dict) -> "RAGConfig":
@@ -123,6 +175,13 @@ class RAGConfig:
 
             # Agent
             tavily_api_key=agent.get("tavily_api_key", os.getenv("TAVILY_API_KEY", "")),
+
+            # MCP & Skills
+            mcp_servers=data.get("mcp_servers"),
+            skills=data.get("skills"),
+
+            # Logging
+            logging=data.get("logging"),
         )
 
     @classmethod
@@ -153,4 +212,7 @@ class RAGConfig:
             enable_query_expansion=data.get("enable_query_expansion", False),
             max_context_tokens=data.get("max_context_tokens", 0),
             tavily_api_key=data.get("tavily_api_key", os.getenv("TAVILY_API_KEY", "")),
+
+            # Logging
+            logging=data.get("logging"),
         )

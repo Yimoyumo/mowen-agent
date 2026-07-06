@@ -1,9 +1,14 @@
 """知识库管理模块。
 
 提供知识库的 CRUD、元数据持久化，以及与 Chroma collection 的映射。
+
+持久化安全：
+- 原子写入：先写临时文件，再 rename 覆盖，避免写入中途崩溃导致文件损坏
+- 文件锁：fcntl.flock 防止多进程/多请求并发写冲突
 """
 
 import json
+import os
 import shutil
 import uuid
 from dataclasses import asdict, dataclass
@@ -11,7 +16,9 @@ from datetime import datetime
 from pathlib import Path
 
 from server.config import RAGConfig
+from server.logging_config import get_logger
 
+logger = get_logger(__name__)
 
 KB_META_FILE = "knowledge_bases.json"   # 知识库元数据持久化文件名
 
@@ -55,22 +62,60 @@ def _sanitize_collection_name(kb_id: str) -> str:
 
 
 def load_knowledge_bases(config: RAGConfig | None = None) -> list[KnowledgeBase]:
-    """加载所有知识库元数据。"""
+    """加载所有知识库元数据（带共享锁，防止读到写一半的数据）。"""
+    import fcntl
+
     meta_path = _get_meta_path(config)
     if not meta_path.exists():
         return []
 
-    with open(meta_path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
+    lock_path = meta_path.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(lock_path, "w") as lock_file:
+        # 共享锁：允许并发读，但会被排他写锁阻塞
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     return [KnowledgeBase(**item) for item in raw]
 
 
 def save_knowledge_bases(kbs: list[KnowledgeBase], config: RAGConfig | None = None) -> None:
-    """保存所有知识库元数据。"""
+    """保存所有知识库元数据（原子写入 + 文件锁）。
+
+    安全措施：
+    1. 文件锁：fcntl.flock 防止多进程/多请求并发写冲突
+    2. 原子写入：先写临时文件，rename 覆盖，避免写入中途崩溃导致文件损坏
+    """
+    import fcntl
+
     meta_path = _get_meta_path(config)
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump([asdict(kb) for kb in kbs], f, ensure_ascii=False, indent=2)
+    lock_path = meta_path.with_suffix(".lock")
+
+    # 确保目录存在
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 写入临时文件 → rename 覆盖（原子操作）
+    tmp_path = meta_path.with_suffix(".tmp")
+    data = json.dumps([asdict(kb) for kb in kbs], ensure_ascii=False, indent=2)
+
+    with open(lock_path, "w") as lock_file:
+        # 排他锁：阻塞等待其他进程释放
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())  # 确保写入磁盘
+
+            # rename 是原子操作：要么成功覆盖，要么原文件不变
+            os.replace(str(tmp_path), str(meta_path))
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)  # 释放锁
 
 
 def create_knowledge_base(

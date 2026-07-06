@@ -8,8 +8,11 @@ import re
 from langchain_core.documents import Document
 
 from server.config import RAGConfig
+from server.logging_config import get_logger
 from server.retrieval.query_expansion import expand_query
 from server.vectorstore_chroma import load_vector_store
+
+logger = get_logger(__name__)
 
 
 # 特殊查询类型：结局/最终类问题——避免扩写后语义发散，直接原问题检索
@@ -65,7 +68,7 @@ def _retrieve_by_chapter_keywords(
         )
         return docs
     except Exception as exc:
-        print(f"章节过滤检索失败: {exc}")
+        logger.warning("章节过滤检索失败: %s", exc)
         return []
 
 
@@ -131,7 +134,7 @@ def expand_and_retrieve(
     # 对结局/最终类问题，直接用原问题检索（避免扩写后语义发散），
     # 并额外从终章类章节中检索，合并后终章内容前置
     if _is_ending_question(question):
-        print("检测到结局类问题，优先召回终章内容")
+        logger.debug("检测到结局类问题，优先召回终章内容")
         base_docs = retriever.invoke(question)
         ending_docs = _retrieve_by_chapter_keywords(
             vector_store, question, config, ENDING_CHAPTER_KEYWORDS
@@ -140,7 +143,7 @@ def expand_and_retrieve(
 
     # 对本质/真实身份类问题，优先召回揭示真相的章节
     if _is_essence_question(question):
-        print("检测到本质/身份类问题，优先召回核心章节")
+        logger.debug("检测到本质/身份类问题，优先召回核心章节")
         base_docs = retriever.invoke(question)
         essence_docs = _retrieve_by_chapter_keywords(
             vector_store, question, config, ESSENCE_CHAPTER_KEYWORDS
@@ -148,16 +151,16 @@ def expand_and_retrieve(
         return _merge_with_ending_priority(base_docs, essence_docs, config.top_k)
 
     if not config.enable_query_expansion:
-        print("查询扩写已关闭，使用原问题检索")
+        logger.debug("查询扩写已关闭，使用原问题检索")
         return retriever.invoke(question)
 
     # 查询扩写：用 LLM 生成多个语义相关的查询，提升召回率
     try:
         queries = expand_query(question, config)
-        print(f"查询扩写完成，共 {len(queries)} 个查询: {queries}")
+        logger.debug("查询扩写完成，共 %d 个查询: %s", len(queries), queries)
     except Exception as exc:
         # 扩写失败（如 API 限流），降级为原问题检索
-        print(f"查询扩写失败，使用原问题检索: {exc}")
+        logger.warning("查询扩写失败，使用原问题检索: %s", exc)
         queries = [question]
 
     # 多查询检索：对每个查询执行检索，合并去重

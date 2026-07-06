@@ -11,9 +11,12 @@ from langchain_core.documents import Document
 from server.config import RAGConfig
 from server.knowledge_base import get_knowledge_base
 from server.loader import load_directory
+from server.logging_config import get_logger
 from server.splitter import split_documents_by_type
 from server.vectorstore_chroma import create_vector_store, append_to_vector_store
 from server.legacy.chain import get_rag_chain, get_rag_streaming_chain
+
+logger = get_logger(__name__)
 
 
 def _resolve_kb_type(kb_id: str | None, config: RAGConfig | None = None) -> str:
@@ -32,9 +35,9 @@ def build_vector_store_from_directory(
 ) -> None:
     """从文档目录构建并保存向量库。"""
     config = config or RAGConfig.from_json()
-    print(f"正在加载文档: {dir_path}")
+    logger.info("正在加载文档: %s", dir_path)
     documents = load_directory(dir_path)
-    print(f"共加载 {len(documents)} 个文件")
+    logger.info("共加载 %d 个文件", len(documents))
 
     build_vector_store_from_documents(documents, collection_name, kb_type, config)
 
@@ -48,14 +51,13 @@ def build_vector_store_from_documents(
     """从文档对象列表构建并保存向量库。"""
     config = config or RAGConfig.from_json()
 
-    print(f"正在按 [{kb_type}] 策略切分文档...")
+    logger.info("正在按 [%s] 策略切分文档...", kb_type)
     chunks = split_documents_by_type(documents, kb_type, config)
-    print(f"切分为 {len(chunks)} 个文本块")
+    logger.info("切分为 %d 个文本块", len(chunks))
 
-    print("正在构建 Chroma 向量库...")
-    vector_store = create_vector_store(chunks, collection_name, config)
-    print(f"Chroma 向量库已持久化到: {config.vector_store_dir}/chroma/{collection_name}")
-    print("向量库构建完成")
+    logger.info("正在构建 Chroma 向量库...")
+    create_vector_store(chunks, collection_name, config)
+    logger.info("向量库构建完成: %s/chroma/%s", config.vector_store_dir, collection_name)
 
 
 def append_documents_to_knowledge_base(
@@ -67,13 +69,13 @@ def append_documents_to_knowledge_base(
     """向指定知识库追加文档。"""
     config = config or RAGConfig.from_json()
 
-    print(f"正在按 [{kb_type}] 策略切分追加文档...")
+    logger.info("正在按 [%s] 策略切分追加文档...", kb_type)
     chunks = split_documents_by_type(documents, kb_type, config)
-    print(f"切分为 {len(chunks)} 个文本块")
+    logger.info("切分为 %d 个文本块", len(chunks))
 
-    print("正在追加到 Chroma 向量库...")
+    logger.info("正在追加到 Chroma 向量库...")
     append_to_vector_store(chunks, collection_name, config)
-    print(f"Chroma 向量库已更新: {config.vector_store_dir}/chroma/{collection_name}")
+    logger.info("向量库已更新: %s/chroma/%s", config.vector_store_dir, collection_name)
 
 
 def ask(question: str, kb_id: str | None = None, config: RAGConfig | None = None) -> dict:

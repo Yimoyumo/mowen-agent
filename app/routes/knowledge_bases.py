@@ -8,9 +8,10 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
+from app.errors import InternalError, NotFoundError, ValidationError
 from app.models import (
     CreateKnowledgeBaseRequest,
     KnowledgeBaseDocumentsResponse,
@@ -27,6 +28,7 @@ from server.knowledge_base import (
     load_knowledge_bases,
 )
 from server.loader import load_documents
+from server.logging_config import get_logger
 from server.legacy.pipeline import (
     append_documents_to_knowledge_base,
     build_vector_store_from_directory,
@@ -34,6 +36,7 @@ from server.legacy.pipeline import (
 )
 from server.vectorstore_chroma import load_vector_store
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -64,7 +67,7 @@ def list_kb_types() -> dict:
 def create_kb_endpoint(request: CreateKnowledgeBaseRequest) -> KnowledgeBaseResponse:
     """创建新知识库。"""
     if not request.name.strip():
-        raise HTTPException(status_code=400, detail="知识库名称不能为空")
+        raise ValidationError("知识库名称不能为空")
 
     # 校验知识库类型，非法值回退为 general
     kb_type = (request.kb_type or "general").strip().lower()
@@ -78,7 +81,7 @@ def create_kb_endpoint(request: CreateKnowledgeBaseRequest) -> KnowledgeBaseResp
             kb_type,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"创建失败: {exc}") from exc
+        raise InternalError("创建知识库失败", detail=str(exc)) from exc
 
     return KnowledgeBaseResponse(
         id=kb.id,
@@ -95,10 +98,10 @@ def delete_kb_endpoint(kb_id: str) -> dict:
     try:
         deleted = delete_knowledge_base(kb_id)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"删除失败: {exc}") from exc
+        raise InternalError("删除知识库失败", detail=str(exc)) from exc
 
     if not deleted:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+        raise NotFoundError("知识库不存在")
 
     return {"status": "ok", "message": "知识库已删除"}
 
@@ -112,7 +115,7 @@ def list_kb_documents_endpoint(kb_id: str) -> KnowledgeBaseDocumentsResponse:
     """
     kb = get_knowledge_base(kb_id)
     if kb is None:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+        raise NotFoundError("知识库不存在")
 
     try:
         # 从 Chroma collection 获取所有元数据
@@ -139,7 +142,7 @@ def list_kb_documents_endpoint(kb_id: str) -> KnowledgeBaseDocumentsResponse:
             for source, info in sorted(grouped.items())
         ]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"获取文档信息失败: {exc}") from exc
+        raise InternalError("获取文档信息失败", detail=str(exc)) from exc
 
     return KnowledgeBaseDocumentsResponse(
         kb_id=kb.id,
@@ -157,12 +160,12 @@ def build_kb_endpoint(kb_id: str) -> dict:
     """
     kb = get_knowledge_base(kb_id)
     if kb is None:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+        raise NotFoundError("知识库不存在")
 
     try:
         build_vector_store_from_directory("./data", kb.collection_name, kb.kb_type)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"构建失败: {exc}") from exc
+        raise InternalError("构建知识库失败", detail=str(exc)) from exc
 
     return {"status": "ok", "message": f"知识库 {kb.name} 重建完成"}
 
@@ -180,41 +183,57 @@ def upload_kb_endpoint(
     """
     kb = get_knowledge_base(kb_id)
     if kb is None:
-        raise HTTPException(status_code=404, detail="知识库不存在")
+        raise NotFoundError("知识库不存在")
 
     if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名不能为空")
+        raise ValidationError("文件名不能为空")
+
+    # 清理文件名：只取文件名部分，防止路径穿越
+    safe_filename = Path(file.filename).name
+    if not safe_filename or safe_filename in (".", ".."):
+        raise ValidationError("文件名不合法")
 
     # 校验文件类型
     allowed_suffixes = {".txt", ".md", ".json", ".csv"}
-    suffix = Path(file.filename).suffix.lower()
+    suffix = Path(safe_filename).suffix.lower()
     if suffix not in allowed_suffixes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件类型: {suffix}，仅支持 {allowed_suffixes}",
-        )
+        raise ValidationError(f"不支持的文件类型: {suffix}，仅支持 {', '.join(allowed_suffixes)}")
 
     # 保存到临时目录，处理完后自动清理
     temp_dir = Path(tempfile.mkdtemp(prefix="upload_"))
-    temp_path = temp_dir / file.filename
+    temp_path = temp_dir / safe_filename
 
     try:
-        # 写入临时文件
+        # 流式写入并检查大小（限制 50MB）
+        max_size = 50 * 1024 * 1024
+        total_size = 0
         with temp_path.open("wb") as f:
-            shutil.copyfileobj(file.file, f)
+            while chunk := file.file.read(64 * 1024):
+                total_size += len(chunk)
+                if total_size > max_size:
+                    f.close()
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    raise ValidationError(f"文件过大，最大支持 {max_size // 1024 // 1024}MB")
+                f.write(chunk)
+
+        logger.info("知识库上传: %s → %s (%d bytes)", safe_filename, kb.name, total_size)
 
         # 加载文档并写入向量库
         documents = load_documents(temp_path)
         if reset:
             # 清空重建
             build_vector_store_from_documents(documents, kb.collection_name, kb.kb_type)
-            message = f"已上传 {file.filename} 并重建知识库 {kb.name}"
+            message = f"已上传 {safe_filename} 并重建知识库 {kb.name}"
         else:
             # 追加到已有向量库
             append_documents_to_knowledge_base(documents, kb.collection_name, kb.kb_type)
-            message = f"已追加 {file.filename} 到知识库 {kb.name}"
+            message = f"已追加 {safe_filename} 到知识库 {kb.name}"
+    except InternalError:
+        raise
+    except ValidationError:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"上传失败: {exc}") from exc
+        raise InternalError("上传文档失败", detail=str(exc)) from exc
     finally:
         # 清理临时文件
         shutil.rmtree(temp_dir, ignore_errors=True)

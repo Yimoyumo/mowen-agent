@@ -13,8 +13,11 @@ from langchain_core.tools import tool
 from tavily import TavilyClient
 
 from server.config import RAGConfig
+from server.logging_config import get_logger
 from server.retrieval.retriever import expand_and_retrieve
 from server.chain import _resolve_collection_name
+
+logger = get_logger(__name__)
 
 # 通过 contextvar 将 kb_id 和 config 从 chat_stream 传入工具
 _current_kb_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -116,16 +119,20 @@ if len(text) > 8000:
 print(text)
 '''
     sb.write_file("/workspace/_fetch.py", script)
-    exit_code, output = sb.exec(f'python3 /workspace/_fetch.py "{url}"', timeout=30)
+    # 用单引号包裹 URL 防止 shell 注入，并转义 URL 中的单引号
+    safe_url = url.replace("'", "'\"'\"'")
+    exit_code, output = sb.exec(f"python3 /workspace/_fetch.py '{safe_url}'", timeout=30)
     output = output.strip()
     sb.exec("rm -f /workspace/_fetch.py")
 
     if exit_code != 0:
+        logger.warning("抓取网页失败: url=%s exit=%d", url, exit_code)
         return f"（抓取失败: {output[:300]}）"
 
     if not output:
         return "（页面无内容）"
 
+    logger.info("抓取网页成功: %s (%d 字符)", url, len(output))
     return output
 
 
