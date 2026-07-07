@@ -1,3 +1,9 @@
+---
+name: web_scraping
+description: 网页爬取、批量抓取、HTML 解析、结构化数据提取
+keywords: [爬虫, 爬取, 抓取, 网页, HTML, BeautifulSoup, 爬, scrape]
+---
+
 # 网页爬取技能
 
 ## 适用场景

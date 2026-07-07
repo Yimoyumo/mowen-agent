@@ -1,3 +1,9 @@
+---
+name: data_analysis
+description: 数据分析、统计计算、生成图表、处理 CSV/JSON/Excel 文件
+keywords: [分析, 图表, 统计, CSV, JSON, Excel, pandas, matplotlib, 数据]
+---
+
 # 数据分析技能
 
 ## 适用场景

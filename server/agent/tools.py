@@ -300,6 +300,25 @@ def sandbox_export_file(path: str) -> str:
     return f"✓ 文件已导出: [{filename}]({url}) （点击下载）"
 
 
+@tool
+def load_skill(skill_name: str) -> str:
+    """加载指定技能的完整指导内容。
+
+    系统提示词中列出了已启用的技能摘要，当你需要某个技能的详细工作流程时，
+    调用此工具获取完整内容。
+
+    适用场景：
+    - 用户任务与某个技能相关，需要参考详细步骤
+    - 不确定如何处理某类任务，想查看是否有相关技能指导
+
+    参数:
+        skill_name: 技能名称（从系统提示词的技能列表中获取）
+    """
+    from server.agent.skills import load_skill_detail
+
+    return load_skill_detail(skill_name)
+
+
 def get_agent_tools() -> list:
     """获取 Agent 可用工具列表。"""
     return [
@@ -308,7 +327,9 @@ def get_agent_tools() -> list:
         fetch_webpage,
         sandbox_run,
         sandbox_write_file,
+        sandbox_edit_file,
         sandbox_read_file,
         sandbox_list_files,
         sandbox_export_file,
+        load_skill,
     ]

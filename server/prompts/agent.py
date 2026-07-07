@@ -27,7 +27,7 @@ from datetime import datetime, timezone, timedelta
 
 from langchain_core.prompts import PromptTemplate
 
-from server.agent.skills import load_skills
+from server.agent.skills import load_skills_summary
 from server.config import RAGConfig
 
 
@@ -39,7 +39,7 @@ _TOOLS = """## 你的能力
 
 你有以下工具可用：
 
-### 内置工具（沙盒 + 检索 + 搜索，推荐优先使用）
+### 内置工具（沙盒 + 检索 + 搜索 + 技能，推荐优先使用）
 
 1. **sandbox_run** — 在 Linux 沙盒中执行 shell 命令
 2. **sandbox_write_file** — 在沙盒中创建或全量覆盖文件
@@ -50,6 +50,7 @@ _TOOLS = """## 你的能力
 7. **search_knowledge_base** — 搜索用户上传的知识库
 8. **search_web** — 联网搜索最新信息
 9. **fetch_webpage** — 抓取指定网址的网页内容
+10. **load_skill** — 加载技能的完整指导内容（任务与某技能相关时调用）
 
 ### MCP 工具（外部扩展工具，按需使用）
 
@@ -197,17 +198,16 @@ def get_time_section() -> str:
 
 
 def get_skills_section(config: RAGConfig | None = None) -> str:
-    """加载已启用技能的提示词段落。
+    """生成技能摘要段落，注入系统提示词。
 
-    Skills 是外部 .md 文件，通过 skills.py 加载后拼接为提示词段落。
+    只注入摘要（名称 + 一句话描述），Agent 需要详细内容时通过 load_skill 工具获取。
     返回空字符串表示无技能。
     """
     config = config or RAGConfig.from_settings()
-    skills_prompt = load_skills(config.skills or [])
+    skills_prompt = load_skills_summary(config.skills or [])
     if not skills_prompt:
         return ""
 
-    # skills.py 已经返回了带标题的完整段落
     return "\n\n" + skills_prompt
 
 
