@@ -73,11 +73,40 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     return meta, body
 
 
+def _resolve_skill_path(name: str) -> Path | None:
+    """解析技能路径，支持单文件和文件夹两种格式。
+
+    优先级：
+    1. skills/{name}.md（单文件）
+    2. skills/{name}/index.md（文件夹）
+    3. skills/{name}/ 目录下任意 .md（无 index.md 时取第一个）
+
+    Returns:
+        技能主文件路径，不存在返回 None。
+    """
+    # 1. 单文件
+    single = _SKILLS_DIR / f"{name}.md"
+    if single.is_file():
+        return single
+
+    # 2. 文件夹
+    skill_dir = _SKILLS_DIR / name
+    if skill_dir.is_dir():
+        index = skill_dir / "index.md"
+        if index.is_file():
+            return index
+        # 无 index.md，取目录下第一个 .md
+        for md in sorted(skill_dir.glob("*.md")):
+            return md
+
+    return None
+
+
 def load_skills_summary(skill_names: list[str]) -> str:
     """生成技能摘要段落，注入系统提示词。
 
-    只包含每个技能的名称和一句话描述，不包含完整正文。
-    Agent 需要详细指导时通过 load_skill 工具按需获取。
+    支持单文件（name.md）和文件夹（name/index.md）两种格式。
+    摘要来自 frontmatter 的 description 字段。
 
     Returns:
         摘要段落文本（空字符串表示无技能）
@@ -87,8 +116,8 @@ def load_skills_summary(skill_names: list[str]) -> str:
 
     lines = []
     for name in skill_names:
-        skill_path = _SKILLS_DIR / f"{name}.md"
-        if not skill_path.exists():
+        skill_path = _resolve_skill_path(name)
+        if not skill_path:
             logger.warning("技能不存在: %s", name)
             continue
 
@@ -98,7 +127,6 @@ def load_skills_summary(skill_names: list[str]) -> str:
         # 摘要：优先用 frontmatter 的 description，否则取正文第一段
         desc = meta.get("description", "")
         if not desc:
-            # 取正文第一个非标题行的非空行
             for line in body.split("\n"):
                 line = line.strip()
                 if line and not line.startswith("#") and not line.startswith("```"):
@@ -124,33 +152,66 @@ def load_skills_summary(skill_names: list[str]) -> str:
 def load_skill_detail(skill_name: str) -> str:
     """加载单个技能的完整内容（供 load_skill 工具调用）。
 
+    支持两种格式：
+    - 单文件：skills/{name}.md → 返回该文件正文
+    - 文件夹：skills/{name}/ → 拼接目录下所有 .md 文件正文
+
     Args:
-        skill_name: 技能名（不含 .md 扩展名）
+        skill_name: 技能名
 
     Returns:
-        技能完整正文（frontmatter 之后的全部内容）。
-        技能不存在时返回错误提示。
+        技能完整正文。技能不存在时返回错误提示。
     """
-    skill_path = _SKILLS_DIR / f"{skill_name}.md"
-    if not skill_path.exists():
+    skill_path = _resolve_skill_path(skill_name)
+    if not skill_path:
         available = list_available_skills()
         return (
             f"技能 '{skill_name}' 不存在。"
             f"可用技能: {', '.join(available) or '无'}"
         )
 
-    content = skill_path.read_text(encoding="utf-8").strip()
-    _, body = _parse_frontmatter(content)
+    # 单文件：直接返回正文
+    if skill_path.is_file() and not skill_path.parent.name == skill_name:
+        content = skill_path.read_text(encoding="utf-8").strip()
+        _, body = _parse_frontmatter(content)
+        logger.info("技能详情已加载: %s (%d 字符)", skill_name, len(body))
+        return body
 
-    logger.info("技能详情已加载: %s (%d 字符)", skill_name, len(body))
-    return body
+    # 文件夹：拼接所有 .md 文件
+    skill_dir = skill_path.parent
+    parts = []
+    for md_file in sorted(skill_dir.glob("*.md")):
+        content = md_file.read_text(encoding="utf-8").strip()
+        _, body = _parse_frontmatter(content)
+        if md_file.name == "index.md":
+            # index.md 放最前面
+            parts.insert(0, body)
+        else:
+            # 其他文件按文件名排序，加标题分隔
+            title = md_file.stem.replace("_", " ").title()
+            parts.append(f"\n\n## {title}\n\n{body}")
+
+    full = "\n\n".join(parts).strip()
+    logger.info("技能详情已加载: %s (%d 字符, %d 个文件)",
+                skill_name, len(full), len(parts))
+    return full
 
 
 def list_available_skills() -> list[str]:
-    """列出 skills/ 目录下所有可用的技能名。"""
+    """列出所有可用技能名（支持单文件和文件夹）。"""
     if not _SKILLS_DIR.exists():
         return []
-    return [f.stem for f in _SKILLS_DIR.glob("*.md")]
+
+    names = set()
+    # 单文件：*.md
+    for f in _SKILLS_DIR.glob("*.md"):
+        names.add(f.stem)
+    # 文件夹：*/（目录下至少有一个 .md）
+    for d in _SKILLS_DIR.iterdir():
+        if d.is_dir() and any(d.glob("*.md")):
+            names.add(d.name)
+
+    return sorted(names)
 
 
 # ==================== 向后兼容 ====================
