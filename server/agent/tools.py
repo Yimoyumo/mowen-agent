@@ -5,9 +5,13 @@
 - search_web: 联网搜索实时信息
 - sandbox_run: 在 Docker 沙盒中执行 shell 命令
 - sandbox_write_file / sandbox_read_file / sandbox_list_files: 沙盒文件操作
+- search_skills / install_skill: 宿主机技能搜索与安装（不经过沙盒）
 """
 
 import contextvars
+import json
+import subprocess
+from pathlib import Path
 
 from langchain_core.tools import tool
 from tavily import TavilyClient
@@ -319,6 +323,134 @@ def load_skill(skill_name: str) -> str:
     return load_skill_detail(skill_name)
 
 
+# ==================== 技能搜索与安装（宿主机工具，不经过沙盒） ====================
+
+
+@tool
+def search_skills(query: str) -> str:
+    """从开源技能生态（skills.sh）搜索可用的 Agent 技能。
+
+    在宿主机上执行 npx skills find，返回搜索结果。
+    不经过沙盒，不需要 Docker。
+
+    适用场景：
+    - 用户问 "有没有技能可以做 X"
+    - 用户想扩展 Agent 能力
+    - 用户想找现成的方案而非从头写
+
+    参数:
+        query: 搜索关键词（如 "react performance"、"pr review"、"changelog"）
+    """
+    try:
+        result = subprocess.run(
+            ["npx", "-y", "skills", "find", query],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(Path.cwd()),
+        )
+        output = result.stdout.strip() or result.stderr.strip()
+        if not output:
+            return "（搜索无结果）"
+
+        if len(output) > 4000:
+            output = output[:4000] + "\n\n... （结果过长已截断）"
+
+        return output
+    except subprocess.TimeoutExpired:
+        return "（搜索超时，请稍后重试）"
+    except FileNotFoundError:
+        return "（npx 未安装，无法搜索技能）"
+    except Exception as exc:
+        return f"（搜索失败: {exc}）"
+
+
+@tool
+def install_skill(package: str) -> str:
+    """安装开源技能到项目 skills/ 目录并自动启用。
+
+    在宿主机上执行 npx skills add，安装到项目的 skills/ 目录下，
+    并自动更新 user_settings.json 的 skills 数组。安装后可直接使用，无需重启。
+
+    不经过沙盒，不需要 Docker。
+
+    适用场景：
+    - 用户想安装搜索到的技能
+    - 用户提供了技能包名（如 owner/repo@skill-name）
+
+    参数:
+        package: 技能包名（如 "vercel-labs/agent-skills@vercel-react-best-practices"）
+    """
+    from server.agent.skills import list_available_skills
+    from server.user_settings import user_settings
+    from server.logging_config import get_logger
+
+    logger = get_logger(__name__)
+
+    # 安装前的技能列表
+    before = set(list_available_skills())
+
+    try:
+        result = subprocess.run(
+            ["npx", "-y", "skills", "add", package, "-y"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(Path.cwd()),
+        )
+
+        output = result.stdout.strip()
+        if result.returncode != 0:
+            err = result.stderr.strip()
+            return f"（安装失败: {err or output[:500]}）"
+
+        # 安装后的技能列表，找出新增的
+        after = set(list_available_skills())
+        new_skills = after - before
+
+        if not new_skills:
+            # 可能装到了用户目录而非项目目录，检查 ~/.agents/skills/
+            home_skills = Path.home() / ".agents" / "skills"
+            if home_skills.exists():
+                # 找最新的目录
+                dirs = sorted(home_skills.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+                if dirs:
+                    src = dirs[0]
+                    dest = Path("skills") / src.name
+                    if src.is_dir():
+                        import shutil
+                        shutil.copytree(src, dest)
+                        new_skills = {src.name}
+
+        if not new_skills:
+            return f"安装命令已执行，但未检测到新技能。\n输出: {output[:500]}\n\n请检查技能是否安装到了其他目录。"
+
+        # 自动更新 user_settings.json
+        cfg = user_settings.load()
+        skills_list = cfg.get("skills", [])
+        for s in new_skills:
+            if s not in skills_list:
+                skills_list.append(s)
+        cfg["skills"] = skills_list
+        user_settings.save(cfg)
+
+        skill_list_str = ", ".join(new_skills)
+        logger.info("技能已安装并启用: %s", skill_list_str)
+
+        return (
+            f"✓ 技能安装成功: {skill_list_str}\n"
+            f"已自动启用，可以直接使用。\n"
+            f"调用 load_skill('{list(new_skills)[0]}') 可查看技能详细内容。"
+        )
+
+    except subprocess.TimeoutExpired:
+        return "（安装超时，请稍后重试）"
+    except FileNotFoundError:
+        return "（npx 未安装，无法安装技能）"
+    except Exception as exc:
+        return f"（安装失败: {exc}）"
+
+
 def get_agent_tools() -> list:
     """获取 Agent 可用工具列表。"""
     return [
@@ -332,4 +464,6 @@ def get_agent_tools() -> list:
         sandbox_list_files,
         sandbox_export_file,
         load_skill,
+        search_skills,
+        install_skill,
     ]
