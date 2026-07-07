@@ -120,12 +120,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 from app.routes import chat, config, files, knowledge_bases, memory, settings  # noqa: E402
 from app.cleanup import start_cleanup_task  # noqa: E402
 
-app.include_router(chat.router, tags=["对话"])
-app.include_router(config.router, tags=["配置"])
-app.include_router(files.router, tags=["文件"])
-app.include_router(knowledge_bases.router, tags=["知识库"])
-app.include_router(memory.router, tags=["记忆"])
-app.include_router(settings.router, tags=["用户设置"])
+app.include_router(chat.router, prefix="/api", tags=["对话"])
+app.include_router(config.router, prefix="/api", tags=["配置"])
+app.include_router(files.router, prefix="/api", tags=["文件"])
+app.include_router(knowledge_bases.router, prefix="/api", tags=["知识库"])
+app.include_router(memory.router, prefix="/api", tags=["记忆"])
+app.include_router(settings.router, prefix="/api", tags=["用户设置"])
 
 
 # ==================== 启动/关闭事件 ====================
