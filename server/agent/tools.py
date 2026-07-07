@@ -198,6 +198,57 @@ def sandbox_write_file(path: str, content: str) -> str:
 
 
 @tool
+def sandbox_edit_file(path: str, old_text: str, new_text: str) -> str:
+    """精确替换文件中的某段文本（用于修改已有文件，避免全量重写）。
+    path: 文件路径（如 /workspace/sort.py）
+    old_text: 要替换的原始文本（必须与文件中的内容完全一致，包括缩进和换行）
+    new_text: 替换后的新文本
+
+    使用场景：
+    - 修改代码中的某一行或某几行
+    - 替换函数名、变量名
+    - 修改配置文件中的某个值
+
+    注意：
+    - old_text 必须在文件中唯一匹配，如果有多处匹配会报错，请提供更多上下文使其唯一
+    - 如果 old_text 不存在于文件中，会报错
+    - 替换后文件会自动保存"""
+    from server.agent.sandbox import get_or_create
+
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
+    if sb is None:
+        return "（沙盒未启动）"
+
+    # 读取当前内容
+    current = sb.read_file(path)
+    if current.startswith("（文件不存在"):
+        return f"（文件不存在: {path}）"
+
+    # 检查匹配
+    count = current.count(old_text)
+    if count == 0:
+        # 提供附近内容帮助 Agent 定位
+        preview = current[:500] if len(current) > 500 else current
+        return f"（未找到要替换的文本。文件前 500 字符：\n{preview}）"
+    if count > 1:
+        return f"（匹配到 {count} 处，old_text 不唯一。请提供更多上下文使其唯一匹配）"
+
+    # 执行替换
+    new_content = current.replace(old_text, new_text, 1)
+    sb.write_file(path, new_content)
+
+    # 返回改动上下文（前后各几行）方便 Agent 确认
+    idx = new_content.index(new_text)
+    lines_before = new_content[:idx].count("\n")
+    context_start = max(0, idx - 200)
+    context_end = min(len(new_content), idx + len(new_text) + 200)
+    context = new_content[context_start:context_end]
+
+    return f"✓ 已替换 {path} (第 {lines_before + 1} 行)\n```{context}```"
+
+
+@tool
 def sandbox_read_file(path: str) -> str:
     """读取沙盒中的文件内容。"""
     from server.agent.sandbox import get_or_create
