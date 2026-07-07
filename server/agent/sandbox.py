@@ -3,20 +3,25 @@
 为 Agent 提供一个可持久操控的 Linux 环境：
 - 执行任意 shell 命令（含 pip install、编译等）
 - 读写文件、浏览目录
-- 容器在对话开始时创建，结束时销毁
-- 通过 contextvars 在线程/协程间传递沙盒引用
+- 沙盒按会话 ID 管理，跨消息持久化（同一会话内文件不丢失）
+- 超过 30 分钟空闲自动清理
 - export_file: 将容器内文件导出到宿主机供用户下载
 """
 
-import contextvars
 import os
 import shutil
 import subprocess
+import threading
+import time
 import uuid
 from pathlib import Path
 
 import docker
 from docker.errors import DockerException, NotFound
+
+from server.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _SANDBOX_IMAGE = "mowen-sandbox:latest"  # 优先用自建镜像（预装工具），不存在时回退到 python:3.12-slim
 _SANDBOX_MEMORY = "512m"
@@ -26,9 +31,10 @@ _DEFAULT_TIMEOUT = 60          # 默认命令超时（秒）
 _DOWNLOADS_DIR = Path("downloads")  # 文件导出目录
 _UPLOADS_DIR = Path("uploads")      # 用户上传暂存目录
 
-_current_sandbox: contextvars.ContextVar["Sandbox | None"] = contextvars.ContextVar(
-    "sandbox", default=None
-)
+# 沙盒池配置
+_MAX_SANDBOXES = 10             # 全局最大沙盒数（超过时淘汰最久未用的）
+_SANDBOX_IDLE_TIMEOUT = 1800    # 30 分钟空闲自动销毁
+_CLEANUP_INTERVAL = 300        # 每 5 分钟检查一次超时
 
 
 class Sandbox:
@@ -193,28 +199,148 @@ class Sandbox:
             pass
 
 
-# ==================== 全局生命周期 ====================
+# ==================== 沙盒池：按 session_id 管理 ====================
+
+# _sandbox_pool: session_id → {"sandbox": Sandbox, "last_active": float}
+_sandbox_pool: dict[str, dict] = {}
+_pool_lock = threading.Lock()
+
+
+def get_or_create(session_id: str) -> Sandbox:
+    """获取或创建沙盒（按 session_id）。
+
+    如果池中已有该会话的沙盒且容器存活，直接复用；
+    否则创建新沙盒并存入池中。
+    """
+    with _pool_lock:
+        entry = _sandbox_pool.get(session_id)
+        if entry:
+            # 检查容器是否还活着
+            try:
+                entry["sandbox"]._container.reload()
+                entry["last_active"] = time.time()
+                logger.debug("沙盒复用: session=%s", session_id)
+                return entry["sandbox"]
+            except Exception:
+                # 容器已死，清理后重建
+                logger.info("沙盒容器已失效，重建: session=%s", session_id)
+                del _sandbox_pool[session_id]
+
+        # 沙盒池已满，淘汰最久未用的
+        if len(_sandbox_pool) >= _MAX_SANDBOXES:
+            oldest_id = min(_sandbox_pool, key=lambda k: _sandbox_pool[k]["last_active"])
+            old = _sandbox_pool.pop(oldest_id)
+            try:
+                old["sandbox"].destroy()
+            except Exception:
+                pass
+            logger.warning("沙盒池已满，淘汰: session=%s", oldest_id)
+
+        # 创建新沙盒
+        sb = Sandbox()
+        _sandbox_pool[session_id] = {
+            "sandbox": sb,
+            "last_active": time.time(),
+        }
+        logger.info("沙盒已创建: session=%s container=%s", session_id, sb.container_id)
+        return sb
+
+
+def get(session_id: str) -> Sandbox | None:
+    """获取现有沙盒，不存在返回 None。"""
+    with _pool_lock:
+        entry = _sandbox_pool.get(session_id)
+        if not entry:
+            return None
+        try:
+            entry["sandbox"]._container.reload()
+            entry["last_active"] = time.time()
+            return entry["sandbox"]
+        except Exception:
+            del _sandbox_pool[session_id]
+            return None
+
+
+def destroy(session_id: str) -> None:
+    """销毁指定会话的沙盒。"""
+    with _pool_lock:
+        entry = _sandbox_pool.pop(session_id, None)
+    if entry:
+        entry["sandbox"].destroy()
+        logger.info("沙盒已销毁: session=%s", session_id)
+
+
+def destroy_all() -> None:
+    """销毁所有沙盒（应用关闭时调用）。"""
+    with _pool_lock:
+        items = list(_sandbox_pool.items())
+        _sandbox_pool.clear()
+    for session_id, entry in items:
+        try:
+            entry["sandbox"].destroy()
+        except Exception:
+            pass
+    if items:
+        logger.info("已销毁全部沙盒: %d 个", len(items))
+
+
+def pool_status() -> dict:
+    """返回沙盒池状态（用于调试/监控）。"""
+    with _pool_lock:
+        return {
+            "total": len(_sandbox_pool),
+            "max": _MAX_SANDBOXES,
+            "sessions": [
+                {
+                    "session_id": sid,
+                    "container_id": e["sandbox"].container_id,
+                    "idle_seconds": int(time.time() - e["last_active"]),
+                }
+                for sid, e in _sandbox_pool.items()
+            ],
+        }
+
+
+def _cleanup_loop():
+    """后台线程：定期清理超时的空闲沙盒。"""
+    while True:
+        time.sleep(_CLEANUP_INTERVAL)
+        now = time.time()
+        expired_ids: list[str] = []
+        with _pool_lock:
+            for sid, entry in _sandbox_pool.items():
+                if now - entry["last_active"] > _SANDBOX_IDLE_TIMEOUT:
+                    expired_ids.append(sid)
+        for sid in expired_ids:
+            destroy(sid)
+            logger.info("沙盒超时清理: session=%s (空闲超过 %d 秒)", sid, _SANDBOX_IDLE_TIMEOUT)
+
+
+# 启动清理线程（守护线程，随主进程退出）
+_cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True)
+_cleanup_thread.start()
+
+
+# ==================== 旧版 ContextVar 兼容（向后兼容） ====================
+# 保留 contextvars 接口供 tools.py 中的 import 正常工作
+import contextvars
+
+_current_sandbox: contextvars.ContextVar["Sandbox | None"] = contextvars.ContextVar(
+    "sandbox", default=None
+)
 
 
 def create() -> Sandbox:
-    """创建新的沙盒实例并绑定到当前上下文。"""
-    destroy()  # 先清理旧的
+    """[已废弃] 创建沙盒并绑定到当前上下文。请用 get_or_create(session_id)。"""
+    destroy()
     sb = Sandbox()
     _current_sandbox.set(sb)
     return sb
 
 
 def get() -> Sandbox | None:
-    """获取当前上下文的沙盒实例。"""
+    """[已废弃] 获取当前上下文的沙盒。请用 get(session_id)。"""
     return _current_sandbox.get(None)
-
-
-def destroy() -> None:
-    """销毁当前上下文的沙盒实例。"""
-    sb = _current_sandbox.get(None)
-    if sb:
-        sb.destroy()
-        _current_sandbox.set(None)
 
 
 def _quote(command: str) -> str:

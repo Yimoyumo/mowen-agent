@@ -138,6 +138,12 @@ async def _on_startup():
 
 @app.on_event("shutdown")
 async def _on_shutdown():
-    """应用关闭时执行：停止后台任务。"""
+    """应用关闭时执行：停止后台任务 + 销毁所有沙盒。"""
     from app.cleanup import stop_cleanup_task
     stop_cleanup_task()
+    # 销毁所有沙盒容器
+    try:
+        from server.agent.sandbox import destroy_all
+        destroy_all()
+    except Exception as exc:
+        logger.warning("关闭沙盒池失败: %s", exc)

@@ -35,6 +35,7 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
                 stream=request.stream,
                 show_reasoning=request.show_reasoning,
                 uploaded_files=request.uploaded_files or [],
+                session_id=request.session_id,
             ):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except Exception as exc:
@@ -102,3 +103,25 @@ def ask_stream_endpoint(request: AskRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ==================== 沙盒管理接口 ====================
+
+
+@router.post("/sandbox/destroy")
+def destroy_sandbox_endpoint(body: dict):
+    """销毁指定会话的沙盒（切换会话/删除会话时前端调用）。"""
+    session_id = body.get("session_id")
+    if not session_id:
+        raise ValidationError("session_id 不能为空")
+
+    from server.agent.sandbox import destroy as destroy_sandbox
+    destroy_sandbox(session_id)
+    return {"ok": True}
+
+
+@router.get("/sandbox/status")
+def sandbox_status_endpoint():
+    """查看沙盒池状态（调试/监控用）。"""
+    from server.agent.sandbox import pool_status
+    return pool_status()

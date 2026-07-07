@@ -31,6 +31,7 @@ export interface ChatRequest {
   stream?: boolean             // 是否流式输出，默认 true
   show_reasoning?: boolean     // 是否返回推理过程，默认 false
   uploaded_files?: { token: string; filename: string }[]  // 上传的文件
+  session_id?: string | null   // 会话 ID，用于沙盒跨消息持久化
 }
 
 // ==================== 知识库类型 ====================

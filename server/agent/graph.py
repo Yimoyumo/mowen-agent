@@ -80,11 +80,13 @@ async def chat_stream(
     stream: bool = True,
     show_reasoning: bool = False,
     uploaded_files: list[dict] | None = None,
+    session_id: str | None = None,
 ):
     """Agent 对话（流式 / 非流式输出），完全兼容旧版 chat_chain.chat_stream()。
 
     Args:
         uploaded_files: [{token, filename}] 用户上传的文件，Agent 自动导入沙盒
+        session_id: 会话 ID，用于沙盒跨消息持久化。同一 session_id 的消息共享同一沙盒。
 
     Agent 自主决定：
     - 何时检索知识库
@@ -101,11 +103,11 @@ async def chat_stream(
     """
     config = config or RAGConfig.from_settings()
 
-    # 将 kb_id 和 config 注入工具上下文
-    set_agent_context(kb_id, config)
+    # 将 kb_id、config 和 session_id 注入工具上下文
+    set_agent_context(kb_id, config, session_id)
 
-    logger.info("对话开始 | messages=%d kb_id=%s stream=%s provider=%s model=%s",
-                len(messages), kb_id, stream, config.chat_provider, config.chat_model)
+    logger.info("对话开始 | messages=%d kb_id=%s stream=%s provider=%s model=%s session=%s",
+                len(messages), kb_id, stream, config.chat_provider, config.chat_model, session_id)
 
     # 加载记忆，注入 system prompt
     memory_prompt = memory_store.get_prompt()
@@ -124,20 +126,22 @@ async def chat_stream(
     from server.agent.mcp import load_mcp_tools
     mcp_tools = await load_mcp_tools(config.mcp_servers or {})
 
-    # 启动 Docker 沙盒（对话期间持久存在）
-    from server.agent.sandbox import create as create_sandbox, destroy as destroy_sandbox
-    create_sandbox()
-    logger.debug("沙盒已启动")
+    # 沙盒：按 session_id 获取或创建（跨消息持久化）
+    from server.agent.sandbox import get_or_create as get_or_create_sandbox
+    sb = None
+    if session_id:
+        sb = get_or_create_sandbox(session_id)
+        logger.debug("沙盒就绪: session=%s container=%s", session_id, sb.container_id)
+    else:
+        logger.debug("无 session_id，沙盒不可用")
 
     # 将用户上传的文件导入沙盒
     uploaded_info = ""
-    if uploaded_files:
-        from server.agent.sandbox import get as get_sandbox
-        sb = get_sandbox()
+    if uploaded_files and sb:
         parts = []
         for f in uploaded_files:
             host_path = f"uploads/{f['token']}/{f['filename']}"
-            dest = sb.import_file(host_path) if sb else None
+            dest = sb.import_file(host_path)
             if dest:
                 parts.append(f"- {f['filename']} → {dest}")
             else:
@@ -190,8 +194,7 @@ async def chat_stream(
             else:
                 yield event
     finally:
-        destroy_sandbox()
-        logger.debug("沙盒已销毁")
+        # 沙盒跨消息持久化：不在此销毁
         logger.info("对话结束")
 
     # 对话结束后：调度延迟记忆提取（90 秒内无新消息才执行）

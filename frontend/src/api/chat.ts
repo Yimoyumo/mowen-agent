@@ -24,6 +24,7 @@ export function chatStream(
     stream?: boolean
     showReasoning?: boolean
     uploadedFiles?: { token: string; filename: string }[]
+    sessionId?: string
   },
 ): () => void {
   const abortController = new AbortController()
@@ -34,6 +35,7 @@ export function chatStream(
     stream: options?.stream ?? true,
     show_reasoning: options?.showReasoning ?? false,
     uploaded_files: options?.uploadedFiles ?? undefined,
+    session_id: options?.sessionId ?? undefined,
   }
 
   fetch(`${apiClient.defaults.baseURL}/chat/stream`, {

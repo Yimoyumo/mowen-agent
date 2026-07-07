@@ -26,12 +26,17 @@ _current_kb_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 _current_config: contextvars.ContextVar[RAGConfig] = contextvars.ContextVar(
     "config"
 )
+# session_id 用于沙盒跨消息持久化
+_current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "session_id", default=None
+)
 
 
-def set_agent_context(kb_id: str | None, config: RAGConfig) -> None:
+def set_agent_context(kb_id: str | None, config: RAGConfig, session_id: str | None = None) -> None:
     """设置 Agent 工具的运行时上下文（由 chat_stream 调用）。"""
     _current_kb_id.set(kb_id)
     _current_config.set(config)
+    _current_session_id.set(session_id)
 
 
 @tool
@@ -87,9 +92,10 @@ def fetch_webpage(url: str) -> str:
     """抓取指定网页内容，返回正文文本（转换为 Markdown 格式）。
     适用场景：用户给了具体网址，需要读取页面内容；或搜索到结果后想看详情。
     不适用场景：搜索关键词——请用 search_web。"""
-    from server.agent.sandbox import get as get_sandbox
+    from server.agent.sandbox import get_or_create
 
-    sb = get_sandbox()
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
     if sb is None:
         return "（沙盒未启动，无法抓取网页）"
 
@@ -147,9 +153,10 @@ def sandbox_run(command: str) -> str:
     沙盒是一个独立的 Linux 容器，可执行 Python 脚本、pip install 包、文件操作等。
     适用场景：代码执行、数据处理、软件包安装与测试、文件操作、运行脚本。
     提示：多个步骤的命令用 && 或分号串联；需要多个命令时可多次调用，容器状态会保持。"""
-    from server.agent.sandbox import get as get_sandbox
+    from server.agent.sandbox import get_or_create
 
-    sb = get_sandbox()
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
     if sb is None:
         return "（沙盒未启动，请稍后重试）"
 
@@ -179,9 +186,10 @@ def sandbox_write_file(path: str, content: str) -> str:
     """在沙盒中创建或覆盖文件。
     path: 文件路径（如 /workspace/hello.py）
     content: 文件内容"""
-    from server.agent.sandbox import get as get_sandbox
+    from server.agent.sandbox import get_or_create
 
-    sb = get_sandbox()
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
     if sb is None:
         return "（沙盒未启动）"
 
@@ -192,9 +200,10 @@ def sandbox_write_file(path: str, content: str) -> str:
 @tool
 def sandbox_read_file(path: str) -> str:
     """读取沙盒中的文件内容。"""
-    from server.agent.sandbox import get as get_sandbox
+    from server.agent.sandbox import get_or_create
 
-    sb = get_sandbox()
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
     if sb is None:
         return "（沙盒未启动）"
     return sb.read_file(path)
@@ -203,9 +212,10 @@ def sandbox_read_file(path: str) -> str:
 @tool
 def sandbox_list_files(path: str = "/workspace") -> str:
     """列出沙盒目录中的文件。"""
-    from server.agent.sandbox import get as get_sandbox
+    from server.agent.sandbox import get_or_create
 
-    sb = get_sandbox()
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
     if sb is None:
         return "（沙盒未启动）"
     return sb.list_dir(path)
@@ -217,9 +227,10 @@ def sandbox_export_file(path: str) -> str:
     Agent 完成文件生成后应调用此工具，然后将返回的下载链接提供给用户。
     适用场景：生成图表、报告、代码文件、数据文件等需要交付给用户的文件。
     图片文件（.png/.jpg/.svg/.gif）会直接在聊天中渲染显示，其他文件显示为下载链接。"""
-    from server.agent.sandbox import get as get_sandbox
+    from server.agent.sandbox import get_or_create
 
-    sb = get_sandbox()
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
     if sb is None:
         return "（沙盒未启动）"
 

@@ -1,6 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { chatStream } from '@/api/chat'
+import { apiClient } from '@/api/config'
 import { useChatStore } from '@/stores/chat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import type { ChatMessage } from '@/types/api'
@@ -167,6 +168,7 @@ export function useChat() {
         stream: streamEnabled.value,
         showReasoning: showReasoning.value,
         uploadedFiles: uploadedFiles ?? undefined,
+        sessionId: conv.id,
       },
     )
 
@@ -189,11 +191,28 @@ export function useChat() {
     }
   }
 
-  function selectConversation(id: string) {
+  async function destroySandbox(sessionId: string) {
+    try {
+      await fetch(`${apiClient.defaults.baseURL}/sandbox/destroy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+    } catch { /* 静默 */ }
+  }
+
+  async function selectConversation(id: string) {
+    // 切换会话前，销毁当前会话的沙盒
+    const current = store.currentConversation
+    if (current && current.id !== id) {
+      destroySandbox(current.id)
+    }
     store.selectConversation(id)
   }
 
-  function deleteConversation(id: string) {
+  async function deleteConversation(id: string) {
+    // 删除会话时同时销毁沙盒
+    destroySandbox(id)
     store.deleteConversation(id)
   }
 
@@ -201,7 +220,11 @@ export function useChat() {
     store.createConversation()
   }
 
-  function clearAllConversations() {
+  async function clearAllConversations() {
+    // 清空时销毁所有会话的沙盒
+    for (const conv of store.conversations) {
+      destroySandbox(conv.id)
+    }
     store.clearAllConversations()
   }
 

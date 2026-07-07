@@ -16,6 +16,7 @@ class ChatRequest(BaseModel):
     stream: bool = True             # 是否流式输出（False 时一次性返回完整回答）
     show_reasoning: bool = False    # 是否返回模型推理过程（DeepSeek reasoner 等模型支持）
     uploaded_files: list[dict] | None = None  # [{token, filename}] 用户上传的文件，Agent 导入沙盒
+    session_id: str | None = None   # 会话 ID，用于沙盒跨消息持久化
 
 
 class AskRequest(BaseModel):
