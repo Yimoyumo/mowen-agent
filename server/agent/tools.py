@@ -412,21 +412,13 @@ def install_skill(package: str) -> str:
         if not new_skills:
             return f"安装命令已执行，但未检测到新技能。\n输出: {output[:500]}\n\n请检查技能是否安装到了其他目录。"
 
-        # 自动更新 user_settings.json
-        cfg = user_settings.load()
-        skills_list = cfg.get("skills", [])
-        for s in new_skills:
-            if s not in skills_list:
-                skills_list.append(s)
-        cfg["skills"] = skills_list
-        user_settings.save(cfg)
-
+        # 技能目录会被自动扫描，无需手动更新配置
         skill_list_str = ", ".join(new_skills)
-        logger.info("技能已安装并启用: %s", skill_list_str)
+        logger.info("技能已安装并自动启用: %s", skill_list_str)
 
         return (
             f"✓ 技能安装成功: {skill_list_str}\n"
-            f"已自动启用，可以直接使用。\n"
+            f"已自动启用（技能目录会被自动扫描），可以直接使用。\n"
             f"调用 load_skill('{list(new_skills)[0]}') 可查看技能详细内容。"
         )
 

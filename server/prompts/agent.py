@@ -202,11 +202,16 @@ def get_time_section() -> str:
 def get_skills_section(config: RAGConfig | None = None) -> str:
     """生成技能摘要段落，注入系统提示词。
 
-    只注入摘要（名称 + 一句话描述），Agent 需要详细内容时通过 load_skill 工具获取。
-    返回空字符串表示无技能。
+    自动扫描所有技能目录（skills/、.agents/skills/、~/.agents/skills/），
+    发现的技能全部自动启用，无需手动在 user_settings.json 中配置。
+    Agent 需要详细内容时通过 load_skill 工具按需获取。
     """
-    config = config or RAGConfig.from_settings()
-    skills_prompt = load_skills_summary(config.skills or [])
+    from server.agent.skills import list_available_skills
+    all_skills = list_available_skills()
+    if not all_skills:
+        return ""
+
+    skills_prompt = load_skills_summary(all_skills)
     if not skills_prompt:
         return ""
 
