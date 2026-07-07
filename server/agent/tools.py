@@ -405,22 +405,9 @@ def install_skill(package: str) -> str:
             return f"（安装失败: {err or output[:500]}）"
 
         # 安装后的技能列表，找出新增的
+        # 现在同时扫描项目和用户目录，无需手动复制
         after = set(list_available_skills())
         new_skills = after - before
-
-        if not new_skills:
-            # 可能装到了用户目录而非项目目录，检查 ~/.agents/skills/
-            home_skills = Path.home() / ".agents" / "skills"
-            if home_skills.exists():
-                # 找最新的目录
-                dirs = sorted(home_skills.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
-                if dirs:
-                    src = dirs[0]
-                    dest = Path("skills") / src.name
-                    if src.is_dir():
-                        import shutil
-                        shutil.copytree(src, dest)
-                        new_skills = {src.name}
 
         if not new_skills:
             return f"安装命令已执行，但未检测到新技能。\n输出: {output[:500]}\n\n请检查技能是否安装到了其他目录。"
