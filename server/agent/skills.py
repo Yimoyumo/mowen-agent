@@ -30,8 +30,10 @@ from pathlib import Path
 from server.logging_config import get_logger
 
 _SKILLS_DIR = Path("skills")
-# 用户级技能目录（npx skills add 默认安装位置）
+# 用户级技能目录（npx skills add -g 全局安装位置）
 _USER_SKILLS_DIR = Path.home() / ".agents" / "skills"
+# 项目级技能目录（npx skills add 默认安装位置）
+_PROJECT_AGENTS_DIR = Path.cwd() / ".agents" / "skills"
 logger = get_logger(__name__)
 
 
@@ -81,8 +83,8 @@ def _resolve_skill_path(name: str) -> Path | None:
     搜索顺序（项目目录优先）：
     1. skills/{name}.md（项目单文件）
     2. skills/{name}/index.md（项目文件夹）
-    3. ~/.agents/skills/{name}/SKILL.md（用户目录，npx skills 安装格式）
-    4. ~/.agents/skills/{name}.md（用户目录单文件）
+    3. .agents/skills/{name}/SKILL.md（npx skills 项目级安装）
+    4. ~/.agents/skills/{name}/SKILL.md（npx skills 用户级安装）
 
     Returns:
         技能主文件路径，不存在返回 None。
@@ -101,23 +103,32 @@ def _resolve_skill_path(name: str) -> Path | None:
         for md in sorted(skill_dir.glob("*.md")):
             return md
 
-    # 3. 用户目录：npx skills 安装的技能（SKILL.md 格式）
+    # 3. 项目级 .agents/skills/（npx skills add 默认安装位置）
+    if _PROJECT_AGENTS_DIR.exists():
+        d = _PROJECT_AGENTS_DIR / name
+        if d.is_dir():
+            skill_md = d / "SKILL.md"
+            if skill_md.is_file():
+                return skill_md
+            index = d / "index.md"
+            if index.is_file():
+                return index
+            for md in sorted(d.glob("*.md")):
+                return md
+
+    # 4. 用户级 ~/.agents/skills/（npx skills add -g 安装位置）
     if _USER_SKILLS_DIR.exists():
         user_skill_dir = _USER_SKILLS_DIR / name
         if user_skill_dir.is_dir():
-            # 优先找 SKILL.md（npx skills 标准格式）
             skill_md = user_skill_dir / "SKILL.md"
             if skill_md.is_file():
                 return skill_md
-            # 退而找 index.md
             index = user_skill_dir / "index.md"
             if index.is_file():
                 return index
-            # 再退：目录下任意 .md
             for md in sorted(user_skill_dir.glob("*.md")):
                 return md
 
-        # 4. 用户目录：单文件
         user_single = _USER_SKILLS_DIR / f"{name}.md"
         if user_single.is_file():
             return user_single
@@ -194,15 +205,8 @@ def load_skill_detail(skill_name: str) -> str:
         )
 
     # 判断是单文件还是文件夹
-    # 单文件：{name}.md 或 SKILL.md（文件名 != 目录名）
-    # 文件夹：{name}/index.md 或 {name}/SKILL.md（文件名 == index.md/SKILL.md，目录名 == skill_name）
-    is_folder = (
-        skill_path.name in ("index.md", "SKILL.md")
-        and skill_path.parent.name == skill_name
-    ) or (
-        skill_path.parent.parent == _USER_SKILLS_DIR
-        and skill_path.parent.name == skill_name
-    )
+    # 文件夹：技能文件在 {name}/ 子目录中（index.md / SKILL.md）
+    is_folder = skill_path.parent.name == skill_name and skill_path.name in ("index.md", "SKILL.md")
 
     if not is_folder:
         # 单文件：直接返回正文
@@ -232,15 +236,16 @@ def load_skill_detail(skill_name: str) -> str:
 
 
 def list_available_skills() -> list[str]:
-    """列出所有可用技能名（扫描项目目录和用户目录）。
+    """列出所有可用技能名（扫描三个目录）。
 
     搜索位置：
-    - skills/*.md 和 skills/*/（项目目录）
-    - ~/.agents/skills/*/ 和 ~/.agents/skills/*.md（用户目录）
+    - skills/*.md 和 skills/*/（项目 skills 目录）
+    - .agents/skills/*/（npx skills add 项目级安装位置）
+    - ~/.agents/skills/*/ 和 ~/.agents/skills/*.md（用户级安装位置）
     """
     names = set()
 
-    # 项目目录
+    # 项目 skills/ 目录
     if _SKILLS_DIR.exists():
         for f in _SKILLS_DIR.glob("*.md"):
             names.add(f.stem)
@@ -248,7 +253,13 @@ def list_available_skills() -> list[str]:
             if d.is_dir() and any(d.glob("*.md")):
                 names.add(d.name)
 
-    # 用户目录（npx skills 安装位置）
+    # 项目 .agents/skills/ 目录
+    if _PROJECT_AGENTS_DIR.exists():
+        for d in _PROJECT_AGENTS_DIR.iterdir():
+            if d.is_dir() and any(d.glob("*.md")):
+                names.add(d.name)
+
+    # 用户 ~/.agents/skills/ 目录
     if _USER_SKILLS_DIR.exists():
         for d in _USER_SKILLS_DIR.iterdir():
             if d.is_dir() and any(d.glob("*.md")):
