@@ -26,7 +26,7 @@ from langchain_text_splitters import (
 )
 from langchain_core.documents import Document
 
-from server.config import RAGConfig
+from server.core.config import RAGConfig
 
 
 # 中式/日式/数字章节号

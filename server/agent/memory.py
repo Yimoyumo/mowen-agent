@@ -36,8 +36,8 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from server.config import RAGConfig
-from server.logging_config import get_logger
+from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -337,7 +337,7 @@ class MemoryStore:
         Returns:
             新增记忆条数
         """
-        from server.llm import get_chat_model
+        from server.llm.factory import get_chat_model
         try:
             config = RAGConfig.from_settings()
             llm = get_chat_model(config)
@@ -413,8 +413,8 @@ class MemoryStore:
             result = json.loads(match.group())
             if isinstance(result, list):
                 return result
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            logger.warning("记忆提取 JSON 解析失败: %s text=%.100s", exc, match.group())
 
         return []
 

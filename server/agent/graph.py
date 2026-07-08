@@ -16,10 +16,10 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 
-from server.config import RAGConfig
-from server.llm import get_chat_model
+from server.core.config import RAGConfig
+from server.llm.factory import get_chat_model
 from server.agent.tools import get_agent_tools, set_agent_context
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -35,7 +35,7 @@ def _estimate_tokens(text: str) -> int:
     return max(1, math.ceil(chinese_count / 1.5 + other_chars / 4))
 
 from server.agent.memory import memory_store
-from server.user_settings import user_settings
+from server.core.user_settings import user_settings
 from server.prompts import get_agent_system_prompt
 
 

@@ -19,7 +19,7 @@ from app.models import (
     KnowledgeBaseResponse,
 )
 
-from server.knowledge_base import (
+from server.rag.knowledge_base import (
     KB_TYPES,
     create_knowledge_base,
     delete_knowledge_base,
@@ -27,14 +27,14 @@ from server.knowledge_base import (
     get_knowledge_base,
     load_knowledge_bases,
 )
-from server.loader import load_documents
-from server.logging_config import get_logger
-from server.legacy.pipeline import (
+from server.rag.loader import load_documents
+from server.core.logging_config import get_logger
+from server.rag.chain import (
     append_documents_to_knowledge_base,
     build_vector_store_from_directory,
     build_vector_store_from_documents,
 )
-from server.vectorstore_chroma import load_vector_store
+from server.rag.vectorstore import load_vector_store
 
 logger = get_logger(__name__)
 router = APIRouter()

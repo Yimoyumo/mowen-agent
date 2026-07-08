@@ -11,7 +11,7 @@ export {
   getKnowledgeBaseDocuments,
   uploadDocumentToKnowledgeBase,
 } from './knowledgeBaseApi'
-export { chatStream, askQuestion, askQuestionStream } from './chat'
+export { chatStream } from './chat'
 
 // 用户设置
 export {

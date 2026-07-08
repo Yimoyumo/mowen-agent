@@ -9,7 +9,7 @@
     前端 chat store ←→ API ←→ conversation_store ←→ SQLite
 
 用法：
-    from server.conversation_store import conv_store
+    from server.core.conversation_store import conv_store
 
     conv_store.create_conversation("abc123", "新对话")
     conv_store.add_message("abc123", {"id": "msg1", "role": "user", ...})
@@ -20,8 +20,8 @@ import json
 import sqlite3
 from typing import Any
 
-from server.db import db
-from server.logging_config import get_logger
+from server.core.db import db
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -39,14 +39,26 @@ def _row_to_conv(row: sqlite3.Row) -> dict:
 
 def _row_to_msg(row: sqlite3.Row) -> dict:
     """将 messages 表的行转为字典。"""
+    def _safe_json(raw: str, field: str, msg_id: str) -> list:
+        """安全解析 JSON 字段，失败时返回空列表并记录警告。"""
+        if not raw:
+            return []
+        try:
+            val = json.loads(raw)
+            return val if isinstance(val, list) else []
+        except json.JSONDecodeError:
+            logger.warning("消息 JSON 字段解析失败: msg=%s field=%s value=%.80s", msg_id, field, raw)
+            return []
+
+    msg_id = row["id"]
     return {
-        "id": row["id"],
+        "id": msg_id,
         "role": row["role"],
         "content": row["content"],
         "reasoning": row["reasoning"] or "",
-        "contexts": json.loads(row["contexts"] or "[]"),
-        "segments": json.loads(row["segments"] or "[]"),
-        "files": json.loads(row["files"] or "[]"),
+        "contexts": _safe_json(row["contexts"], "contexts", msg_id),
+        "segments": _safe_json(row["segments"], "segments", msg_id),
+        "files": _safe_json(row["files"], "files", msg_id),
         "createdAt": row["created_at"],
     }
 
@@ -183,12 +195,15 @@ class ConversationStore:
             return False
 
         # 可更新字段
+        old_contexts = json.loads(row["contexts"] or "[]") if row["contexts"] else []
+        old_segments = json.loads(row["segments"] or "[]") if row["segments"] else []
+        old_files = json.loads(row["files"] or "[]") if row["files"] else []
         fields = {
             "content": updates.get("content", row["content"]),
             "reasoning": updates.get("reasoning", row["reasoning"]),
-            "contexts": json.dumps(updates.get("contexts", json.loads(row["contexts"] or "[]")), ensure_ascii=False),
-            "segments": json.dumps(updates.get("segments", json.loads(row["segments"] or "[]")), ensure_ascii=False),
-            "files": json.dumps(updates.get("files", json.loads(row["files"] or "[]")), ensure_ascii=False),
+            "contexts": json.dumps(updates.get("contexts", old_contexts), ensure_ascii=False),
+            "segments": json.dumps(updates.get("segments", old_segments), ensure_ascii=False),
+            "files": json.dumps(updates.get("files", old_files), ensure_ascii=False),
         }
 
         db.execute(

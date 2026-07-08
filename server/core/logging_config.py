@@ -10,7 +10,7 @@
 - 请求追踪：HTTP 中间件自动注入 request_id
 
 用法：
-    from server.logging_config import get_logger
+    from server.core.logging_config import get_logger
     logger = get_logger(__name__)
     logger.info("消息")
     logger.debug("调试信息")  # 默认不输出，可通过配置开启
@@ -33,7 +33,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 
-from server.config import RAGConfig
+from server.core.config import RAGConfig
 
 
 # ==================== 日志格式 ====================
@@ -55,7 +55,7 @@ class _ColorFormatter(logging.Formatter):
     _RESET = "\033[0m"
 
     # 格式：时间 | 级别 | 模块 | 消息
-    _FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+    _FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(request_id)s | %(message)s"
     _DATE_FORMAT = "%H:%M:%S"
 
     def __init__(self, use_color: bool = True):
@@ -72,7 +72,7 @@ class _ColorFormatter(logging.Formatter):
 
 
 # 文件日志格式（无颜色，含完整时间）
-_FILE_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(funcName)s:%(lineno)d | %(message)s"
+_FILE_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(funcName)s:%(lineno)d | %(request_id)s | %(message)s"
 _FILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -132,10 +132,14 @@ def setup_logging() -> None:
     # 清除已有 handler（防止 uvicorn --reload 重复添加）
     root.handlers.clear()
 
+    # 请求追踪 filter（所有 handler 共享）
+    req_filter = RequestIdFilter()
+
     # ---- 控制台 handler ----
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(cfg["level"])
     console_handler.setFormatter(_ColorFormatter(use_color=sys.stdout.isatty()))
+    console_handler.addFilter(req_filter)
     root.addHandler(console_handler)
 
     # ---- 文件 handler ----
@@ -154,7 +158,21 @@ def setup_logging() -> None:
         file_handler.setFormatter(
             logging.Formatter(fmt=_FILE_FORMAT, datefmt=_FILE_DATE_FORMAT)
         )
+        file_handler.addFilter(req_filter)
         root.addHandler(file_handler)
+
+    # ---- 静默第三方库噪音 ----
+    _NOISY_LIBS = {
+        "httpx": logging.WARNING,
+        "watchfiles.main": logging.WARNING,
+        "mcp.client": logging.WARNING,
+        "mcp.server": logging.WARNING,
+        "urllib3": logging.WARNING,
+        "docker": logging.WARNING,
+        "chromadb": logging.WARNING,
+    }
+    for lib_name, level in _NOISY_LIBS.items():
+        logging.getLogger(lib_name).setLevel(level)
 
     # ---- 模块级别 ----
     for module_name, level in cfg["modules"].items():

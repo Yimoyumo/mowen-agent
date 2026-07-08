@@ -23,7 +23,7 @@ from typing import Any
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

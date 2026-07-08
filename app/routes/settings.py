@@ -24,9 +24,9 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.errors import NotFoundError, ValidationError
-from server.provider_config import list_preset_providers, fetch_models, get_fallback_models
-from server.user_settings import user_settings
-from server.logging_config import get_logger
+from server.llm.provider_config import list_preset_providers, fetch_models, get_fallback_models
+from server.core.user_settings import user_settings
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -127,7 +127,7 @@ def get_providers() -> dict:
     current_model = settings.get("active_model", "")
     # 兜底：如果用户没设，用默认值
     if not current_model:
-        from server.user_settings import _DEFAULT_SETTINGS
+        from server.core.user_settings import _DEFAULT_SETTINGS
         current_model = _DEFAULT_SETTINGS.get("active_model", "")
 
     return {
@@ -286,7 +286,7 @@ def test_provider_model(provider_id: str, body: dict) -> dict:
 
     base_url = providers.get(provider_id, {}).get("base_url", "")
 
-    from server.llm import test_model_connectivity
+    from server.llm.factory import test_model_connectivity
     result = test_model_connectivity(provider_id, model, api_key, base_url=base_url)
     if result["ok"]:
         logger.info("模型联通: %s/%s %.0fms", provider_id, model, result["latency_ms"])
@@ -331,7 +331,7 @@ def get_model_context(model: str = "") -> dict:
 
     优先级：用户自定义覆盖 > 内置映射表 > 未知(0)
     """
-    from server.model_context import get_model_info_with_overrides
+    from server.llm.model_context import get_model_info_with_overrides
 
     model_ref = model.strip()
     if not model_ref:
@@ -341,7 +341,7 @@ def get_model_context(model: str = "") -> dict:
     info = get_model_info_with_overrides(model_ref)
 
     # 也返回 generation 覆盖（如果有）
-    from server.model_context import get_model_generation_overrides
+    from server.llm.model_context import get_model_generation_overrides
     gen_override = get_model_generation_overrides(model_ref)
 
     return {"model": model_ref, **info, "generation_override": gen_override, "has_vision": info.get("has_vision", False)}
@@ -425,7 +425,7 @@ def get_model_vision_map() -> dict:
     返回: { "moonshot/kimi-k2.6": true, "deepseek/deepseek-v4": false, ... }
     前端用这个来决定是否显示 👁️ 视觉标记。
     """
-    from server.model_context import get_model_info_with_overrides
+    from server.llm.model_context import get_model_info_with_overrides
 
     settings = user_settings.load()
     providers = settings.get("providers", {})

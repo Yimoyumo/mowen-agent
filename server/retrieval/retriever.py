@@ -7,10 +7,10 @@ import re
 
 from langchain_core.documents import Document
 
-from server.config import RAGConfig
-from server.logging_config import get_logger
+from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
 from server.retrieval.query_expansion import expand_query
-from server.vectorstore_chroma import load_vector_store
+from server.rag.vectorstore import load_vector_store
 
 logger = get_logger(__name__)
 

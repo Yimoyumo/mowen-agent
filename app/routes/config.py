@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from app.models import ConfigResponse, ModelContextInfo
-from server.user_settings import user_settings, build_config
+from server.core.user_settings import user_settings, build_config
 
 router = APIRouter()
 

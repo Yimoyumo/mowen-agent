@@ -7,12 +7,13 @@
 
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from server.logging_config import get_logger, setup_logging, set_request_id, get_request_id
-from server.db import db
+from server.core.logging_config import get_logger, setup_logging, set_request_id, get_request_id
+from server.core.db import db
 from app.errors import AppException
 
 # 初始化日志系统（幂等，首次调用生效）
@@ -23,10 +24,37 @@ logger = get_logger("app")
 db.init()
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期：启动时启动后台任务，关闭时冲洗记忆 + 销毁沙盒。"""
+    from app.cleanup import start_cleanup_task, stop_cleanup_task
+    start_cleanup_task()
+    logger.info("应用已启动")
+
+    yield
+
+    # ---- 关闭流程 ----
+    stop_cleanup_task()
+    # 立即执行待处理的记忆提取（防止 --reload 重启导致丢失）
+    try:
+        from server.agent.memory import memory_store
+        await memory_store.flush_pending_extraction()
+    except Exception as exc:
+        logger.warning("记忆提取失败: %s", exc)
+    # 销毁所有沙盒容器
+    try:
+        from server.agent.sandbox import destroy_all
+        destroy_all()
+    except Exception as exc:
+        logger.warning("关闭沙盒池失败: %s", exc)
+    logger.info("应用已关闭")
+
+
 app = FastAPI(
     title="墨问 - AI 助手",
     description="通用 AI 助手 API，支持多轮对话与可选 RAG 知识库增强",
     version="0.3.0",
+    lifespan=lifespan,
 )
 
 
@@ -49,6 +77,7 @@ async def log_requests(request: Request, call_next):
     set_request_id(request_id)
 
     method = request.method
+    is_sse = "text/event-stream" in request.headers.get("accept", "")
     logger.info("--> %s %s", method, path)
 
     start = time.perf_counter()
@@ -60,9 +89,11 @@ async def log_requests(request: Request, call_next):
         raise
 
     elapsed_ms = (time.perf_counter() - start) * 1000
-    # SSE 流式响应（200）或普通响应
     if response.status_code >= 400:
         logger.warning("<-- %s %s | %d | %.0fms", method, path, response.status_code, elapsed_ms)
+    elif is_sse:
+        # SSE 流式响应：此处耗时只是到首个 chunk 的时间，流还在持续
+        logger.info("<-- %s %s | %d | %.0fms (stream started)", method, path, response.status_code, elapsed_ms)
     else:
         logger.info("<-- %s %s | %d | %.0fms", method, path, response.status_code, elapsed_ms)
 
@@ -118,7 +149,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # 导入并注册路由模块
 from app.routes import chat, config, conversations, files, knowledge_bases, memory, settings  # noqa: E402
-from app.cleanup import start_cleanup_task  # noqa: E402
 
 app.include_router(chat.router, prefix="/api", tags=["对话"])
 app.include_router(conversations.router, prefix="/api", tags=["会话历史"])
@@ -127,30 +157,3 @@ app.include_router(files.router, prefix="/api", tags=["文件"])
 app.include_router(knowledge_bases.router, prefix="/api", tags=["知识库"])
 app.include_router(memory.router, prefix="/api", tags=["记忆"])
 app.include_router(settings.router, prefix="/api", tags=["用户设置"])
-
-
-# ==================== 启动/关闭事件 ====================
-
-@app.on_event("startup")
-async def _on_startup():
-    """应用启动时执行：启动文件清理后台任务。"""
-    start_cleanup_task()
-
-
-@app.on_event("shutdown")
-async def _on_shutdown():
-    """应用关闭时执行：停止后台任务 + 冲洗记忆 + 销毁所有沙盒。"""
-    from app.cleanup import stop_cleanup_task
-    stop_cleanup_task()
-    # 立即执行待处理的记忆提取（防止 --reload 重启导致丢失）
-    try:
-        from server.agent.memory import memory_store
-        await memory_store.flush_pending_extraction()
-    except Exception as exc:
-        logger.warning("记忆提取失败: %s", exc)
-    # 销毁所有沙盒容器
-    try:
-        from server.agent.sandbox import destroy_all
-        destroy_all()
-    except Exception as exc:
-        logger.warning("关闭沙盒池失败: %s", exc)

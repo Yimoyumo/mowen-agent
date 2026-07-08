@@ -58,8 +58,10 @@
 | 沙盒 | Docker SDK for Python（mowen-sandbox 自建镜像） |
 | MCP | langchain-mcp-adapters |
 | API | FastAPI + SSE 流式 |
-| 日志 | logging + RotatingFileHandler + 请求追踪 |
-| 错误处理 | 统一异常体系 + 全局异常处理器 |
+| 日志 | logging + RotatingFileHandler + RequestIdFilter 请求追踪 |
+| 错误处理 | 统一异常体系 + 全局异常处理器 + lifespan 生命周期 |
+| 数据库 | SQLite (WAL 模式 + 线程本地连接) |
+| 会话持久化 | SQLite + localStorage 双写同步 |
 
 ## 快速开始
 
@@ -93,20 +95,23 @@ npm run dev
 │
 ├── server/                 # 核心引擎包
 │   ├── __init__.py             公共 API
-│   ├── config.py               RAGConfig 配置（从 user_settings 加载）
-│   ├── user_settings.py        用户配置管理器（默认值 + 合并 + 迁移）
-│   ├── model_context.py        模型上下文窗口映射（50+ 模型官方数据）
-│   ├── provider_config.py      厂商预设配置
-│   ├── db.py                   SQLite 数据库封装
-│   ├── logging_config.py       日志模块（Logger 工厂 + 请求追踪）
-│   ├── llm.py                  LLM 厂商工厂（注册表模式）
-│   ├── embeddings.py           Embedding 模型
-│   ├── splitter.py             文档切分
-│   ├── loader.py               文档加载
-│   ├── knowledge_base.py       知识库元数据管理（原子写入 + 文件锁）
-│   ├── vectorstore_chroma.py   Chroma 向量库
-│   ├── chain.py                RAG 链工具函数
-│   ├── chat_chain.py           兼容层（重导出 agent.chat_stream）
+│   ├── core/                   基础设施层
+│   │   ├── config.py               RAGConfig 配置（从 user_settings 加载）
+│   │   ├── db.py                   SQLite 数据库封装（WAL + 线程本地连接）
+│   │   ├── logging_config.py       日志模块（Logger 工厂 + RequestIdFilter）
+│   │   ├── user_settings.py        用户配置管理器（默认值 + 合并 + 迁移）
+│   │   └── conversation_store.py    对话历史持久化
+│   ├── llm/                    LLM 抽象层
+│   │   ├── factory.py              LLM 厂商工厂（注册表模式）
+│   │   ├── embeddings.py           Embedding 模型
+│   │   ├── provider_config.py      厂商预设配置
+│   │   └── model_context.py        模型上下文窗口映射（50+ 模型官方数据）
+│   ├── rag/                    RAG 管线层
+│   │   ├── loader.py               文档加载
+│   │   ├── splitter.py             文档切分
+│   │   ├── vectorstore.py          Chroma 向量库
+│   │   ├── knowledge_base.py       知识库元数据管理
+│   │   └── chain.py                RAG 链构建 + 向量库构建 + 问答接口
 │   ├── prompts/                提示词统一管理
 │   │   ├── __init__.py             公共导出
 │   │   ├── agent.py                Agent 系统提示词（段落组合）
@@ -115,50 +120,52 @@ npm run dev
 │   ├── retrieval/              检索子包
 │   │   ├── retriever.py            多查询检索
 │   │   └── query_expansion.py      查询扩写
-│   ├── agent/                  Agent 子包
-│   │   ├── graph.py                LangGraph ReAct Agent
-│   │   ├── tools.py                8 个工具（搜索/沙盒/网页抓取）
-│   │   ├── sandbox.py               Docker 沙盒管理器
-│   │   ├── mcp.py                   MCP 客户端（逐服务器容错）
-│   │   ├── memory.py                长期记忆（提取 + 存储 + 检索）
-│   │   └── skills.py                Skills 技能加载器
-│   └── legacy/                 旧版兼容（/ask 接口）
-│       ├── chain.py
-│       └── pipeline.py
+│   └── agent/                  Agent 子包
+│       ├── graph.py                LangGraph ReAct Agent
+│       ├── tools.py                12 个工具（搜索/沙盒/网页抓取/技能）
+│       ├── sandbox.py               Docker 沙盒管理器
+│       ├── mcp.py                   MCP 客户端（逐服务器容错）
+│       ├── memory.py                长期记忆（提取 + 存储 + 检索）
+│       └── skills.py                Skills 技能加载器
 │
 ├── app/                    # FastAPI 路由层
-│   ├── main.py                FastAPI 实例 + 中间件 + 生命周期
+│   ├── main.py                FastAPI 实例 + 中间件 + lifespan 生命周期
 │   ├── errors.py              统一异常体系
 │   ├── cleanup.py             文件清理（uploads/downloads 过期）
 │   ├── models.py              Pydantic 数据模型
 │   └── routes/                路由
-│       ├── chat.py                对话接口（/chat/stream）
+│       ├── chat.py                对话接口（/chat/stream + 沙盒管理）
 │       ├── config.py              配置与健康检查
-│       ├── files.py               文件上传/下载（大小限制+类型白名单）
+│       ├── conversations.py       会话历史 CRUD + 批量同步
+│       ├── files.py               文件上传/下载（200MB+类型白名单）
 │       ├── knowledge_bases.py     知识库 CRUD
 │       ├── memory.py              记忆管理 API
-│       └── settings.py            厂商/模型/人设/画像配置 API
+│       └── settings.py            厂商/模型/人设/画像/MCP 配置 API
 │
-├── skills/                 # 技能文件（Markdown）
+├── skills/                 # 技能文件（Markdown，自动扫描）
 │   ├── data_analysis.md         数据分析工作流程
-│   └── web_scraping.md          网页爬取工作流程
+│   ├── document-conversion.md   文档格式转换工作流程
+│   ├── web_scraping.md          网页爬取工作流程
+│   ├── find_skills/             技能搜索指导
+│   ├── mermaid-diagrams/        Mermaid 图表绘制
+│   └── word-document/           Word 文档操作
 │
 ├── Dockerfile.sandbox       # 沙盒 Docker 镜像定义
 │
 ├── frontend/               # Vue 3 前端
 │   └── src/
-│       ├── api/                API 调用（chat/config/settings/knowledgeBase）
+│       ├── api/                API 调用（chat/config/settings/knowledgeBase/conversations）
 │       ├── components/         组件
 │       │   ├── chat/              ChatArea / ChatInput / ChatMessage / ContextPanel
 │       │   ├── home/              HomeHero
 │       │   ├── layout/            AppSidebar / ChatHistoryPanel / KnowledgeBasePanel
-│       │   └── settings/          MemorySettings / ModelSettings / PersonaSettings / ProfileSettings / RetrievalSettings
+│       │   └── settings/          McpSettings / MemorySettings / ModelSettings / PersonaSettings / ProfileSettings / RetrievalSettings
 │       ├── composables/        组合式函数（useChat / useConfig / useKnowledgeBase / useSettings）
-│       ├── stores/             Pinia 状态管理
+│       ├── stores/             Pinia 状态管理（chat + knowledgeBase）
 │       ├── types/              类型定义
 │       └── views/              页面（HomeView / SettingsView）
 │
-├── data/                   # 文档上传目录 + 用户配置
+├── data/                   # 文档上传目录 + 用户配置 + 记忆数据库
 ├── logs/                   # 日志文件（自动创建）
 ├── notebook/               # 学习笔记（Jupyter）
 └── vectorstore/            # Chroma 持久化数据
@@ -286,12 +293,16 @@ Agent: → 不调用工具，直接回答
 |------|------|
 | `sandbox_run` | 在 Docker 沙盒中执行 shell 命令 |
 | `sandbox_write_file` | 在沙盒中创建/覆盖文件 |
+| `sandbox_edit_file` | 精确替换文件中的文本片段 |
 | `sandbox_read_file` | 读取沙盒中的文件 |
 | `sandbox_list_files` | 列出沙盒目录 |
 | `sandbox_export_file` | 导出沙盒文件为下载链接（图片直接渲染） |
 | `search_knowledge_base` | 搜索用户上传的知识库 |
 | `search_web` | 联网搜索实时信息（Tavily） |
 | `fetch_webpage` | 抓取指定网址的网页内容 |
+| `load_skill` | 加载技能的完整指导内容 |
+| `search_skills` | 从 skills.sh 搜索开源技能 |
+| `install_skill` | 安装技能到项目并自动启用 |
 
 ### 提示词工程
 
@@ -346,15 +357,19 @@ Agent: → 不调用工具，直接回答
 
 #### Skills 技能文件 (`skills/`)
 
-Markdown 格式的可扩展场景指导，通过 `user_settings.json` 启用。当前包含：
-- `data_analysis.md` — 数据分析工作流程（pandas + matplotlib）
-- `web_scraping.md` — 网页爬取工作流程（BeautifulSoup + httpx）
+Markdown 格式的可扩展场景指导，目录下所有 `.md` 文件自动扫描加载。当前包含：
+- `data_analysis.md` - 数据分析工作流程（pandas + matplotlib）
+- `document-conversion.md` - 文档格式转换（docx/pdf/xlsx/md/html 互转）
+- `web_scraping.md` - 网页爬取工作流程（BeautifulSoup + httpx）
+- `find_skills/` - 技能搜索指导
+- `mermaid-diagrams/` - Mermaid 图表绘制
+- `word-document/` - Word 文档操作
 
-Skills 在 Agent 启动时加载，注入到系统提示词中。新增技能只需在 `skills/` 目录创建 `.md` 文件并加入配置即可。
+Agent 遇到相关任务时调用 `load_skill` 获取完整指导，按指导在沙盒中执行操作。新增技能只需在 `skills/` 目录创建 `.md` 文件即可。
 
 ### 添加新厂商
 
-`server/llm.py` 使用注册表模式，加新厂商只需一个装饰器：
+`server/llm/factory.py` 使用注册表模式，加新厂商只需一个装饰器：
 
 ```python
 @register_provider("openai")
@@ -368,11 +383,12 @@ def _build_openai(config):
 
 - **Logger 工厂**：各模块通过 `get_logger(__name__)` 获取独立 Logger
 - **双输出**：控制台彩色 + 文件轮转（10MB × 5 份）
-- **请求追踪**：HTTP 中间件为每个请求生成 `request_id`，注入日志上下文
+- **请求追踪**：HTTP 中间件为每个请求生成 `request_id`，注入日志上下文（RequestIdFilter）
 - **模块级别**：通过 user_settings.json 按模块名独立设置日志级别
+- **第三方库降噪**：httpx/watchfiles/mcp/docker/chromadb 统一设为 WARNING
 
 ```python
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 logger = get_logger(__name__)
 logger.info("消息")
 ```
@@ -396,10 +412,10 @@ if not kb:
 
 ### 文件安全
 
-- **上传限制**：50MB 大小限制 + 文件类型白名单（38 种扩展名）
+- **上传限制**：200MB 大小限制 + 文件类型白名单（40+ 种扩展名）
 - **路径穿越防护**：文件名清理 + `resolve()` 校验
 - **并发安全**：`knowledge_bases.json` 原子写入 + `fcntl.flock` 文件锁
-- **自动清理**：`uploads/` 1 小时过期，`downloads/` 24 小时过期
+- **自动清理**：`uploads/` 24 小时过期，`downloads/` 24 小时过期
 
 ### MCP 容错
 

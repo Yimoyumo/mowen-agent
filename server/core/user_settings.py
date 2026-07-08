@@ -14,7 +14,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 logger = get_logger(__name__)
 
 _DATA_DIR = Path("data")
@@ -134,8 +134,8 @@ def _split_model_ref(ref: str) -> tuple[str, str]:
 
 def build_config(settings: dict):
     """从 settings dict 构造 RAGConfig 实例。"""
-    from server.config import RAGConfig
-    from server.model_context import get_model_generation_overrides
+    from server.core.config import RAGConfig
+    from server.llm.model_context import get_model_generation_overrides
     prov = deepcopy(settings.get("providers", {}))
     gen = settings.get("generation", {})
     chunk = settings.get("chunking", {})

@@ -27,7 +27,7 @@ Skill .md 文件格式（含 frontmatter）:
 import re
 from pathlib import Path
 
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 _SKILLS_DIR = Path("skills")
 # 用户级技能目录（npx skills add -g 全局安装位置）

@@ -27,7 +27,6 @@ const toolLabels: Record<string, string> = {
   sandbox_read_file: '读取文件',
   sandbox_list_files: '查看目录',
   sandbox_export_file: '导出文件',
-  convert_document: '文档转换',
   search_knowledge_base: '搜索知识库',
   search_web: '联网搜索',
 }

@@ -8,7 +8,7 @@ from langchain_community.chat_models import ChatZhipuAI
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 
-from server.config import RAGConfig
+from server.core.config import RAGConfig
 
 _providers: dict[str, callable] = {}
 

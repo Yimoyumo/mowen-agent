@@ -16,10 +16,10 @@ from pathlib import Path
 from langchain_core.tools import tool
 from tavily import TavilyClient
 
-from server.config import RAGConfig
-from server.logging_config import get_logger
+from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
 from server.retrieval.retriever import expand_and_retrieve
-from server.chain import _resolve_collection_name
+from server.rag.chain import _resolve_collection_name
 
 logger = get_logger(__name__)
 
@@ -96,6 +96,7 @@ def search_web(query: str, max_results: int = 5, search_depth: str = "basic") ->
         client = TavilyClient(api_key=config.tavily_api_key)
         result = client.search(query, search_depth=search_depth, max_results=max_results)
     except Exception as exc:
+        logger.warning("联网搜索失败: query=%s err=%s", query, exc)
         return f"（搜索失败: {exc}）"
 
     if not result.get("results"):
@@ -321,437 +322,6 @@ def sandbox_export_file(path: str) -> str:
 
 
 @tool
-def convert_document(input_path: str, target_format: str, output_path: str = "") -> str:
-    """在沙盒中转换文档格式，尽量保留原格式（字体、样式、表格、图片等）。
-
-    支持的转换方向：
-    - docx → pdf / md / txt / html
-    - pdf  → md / txt / html（提取文本，保留段落结构）
-    - xlsx → csv / pdf / html
-    - pptx → pdf / png（每页截图）
-    - md   → pdf / docx / html
-    - html → pdf / docx
-
-    格式保留说明：
-    - docx→pdf：保留字体、颜色、表格、页眉页脚、图片
-    - pdf→md/html：保留段落、标题层级、表格结构，图片单独提取
-    - xlsx→csv：保留数据，每个 sheet 输出一个 csv
-    - md→docx：标题、表格、列表、代码块转换为 Word 对应样式
-    - md→pdf：通过 HTML 中转，保留样式
-
-    参数:
-        input_path: 沙盒内源文件路径（如 /workspace/report.docx）
-        target_format: 目标格式（pdf/md/txt/html/csv/docx/png）
-        output_path: 输出文件路径（可选，默认用源文件名换扩展名）
-    """
-    from server.agent.sandbox import get_or_create
-    import os
-
-    session_id = _current_session_id.get()
-    sb = get_or_create(session_id) if session_id else None
-    if sb is None:
-        return "（沙盒未启动）"
-
-    if not output_path:
-        base = os.path.splitext(input_path)[0]
-        output_path = f"{base}.{target_format}"
-
-    input_ext = os.path.splitext(input_path)[1].lower().lstrip(".")
-    target = target_format.lower().lstrip(".")
-
-    # 构建转换脚本
-    scripts = {
-        ("docx", "pdf"): f'''
-# 纯 Python 方案（无需 libreoffice）：python-docx → HTML → weasyprint → PDF
-import sys, os, base64
-from docx import Document
-from pathlib import Path
-
-doc = Document("{input_path}")
-parts = ["<html><head><meta charset='utf-8'><style>",
-    "body {{ font-family: sans-serif; max-width: 800px; margin: 40px auto; line-height: 1.8; }}",
-    "h1,h2,h3,h4 {{ color: #333; margin-top: 20px; }}",
-    "table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}",
-    "td, th {{ border: 1px solid #ccc; padding: 6px 10px; }}",
-    "pre {{ background: #f5f5f5; padding: 10px; overflow-x: auto; }}",
-    "img {{ max-width: 100%; }}",
-    "</style></head><body>"]
-
-for para in doc.paragraphs:
-    style = para.style.name if para.style else ""
-    text = para.text.strip()
-    if not text:
-        parts.append("<br/>")
-        continue
-    if style.startswith("Heading"):
-        try:
-            level = int(style.replace("Heading ", "").replace("Heading", ""))
-        except:
-            level = 1
-        parts.append(f"<h{{min(level,4)}}>{{text}}</h{{min(level,4)}}>")
-    elif style == "Title":
-        parts.append(f"<h1>{{text}}</h1>")
-    else:
-        parts.append(f"<p>{{text}}</p>")
-
-for table in doc.tables:
-    parts.append("<table>")
-    for i, row in enumerate(table.rows):
-        tag = "th" if i == 0 else "td"
-        cells = "".join(f"<{{tag}}>{{cell.text}}</{{tag}}>" for cell in row.cells)
-        parts.append(f"<tr>{{cells}}</tr>")
-    parts.append("</table>")
-
-for rel in doc.part.rels.values():
-    if "image" in rel.reltype:
-        img_data = rel.target_part.blob
-        ext = rel.target_part.ext
-        if ext in ("png", "jpg", "jpeg", "gif", "webp"):
-            b64 = base64.b64encode(img_data).decode()
-            mime = "image/" + ("jpeg" if ext == "jpg" else ext)
-            parts.append(f'<img src="data:{{mime}};base64,{{b64}}" style="max-width:100%"/>')
-
-parts.append("</body></html>")
-html = "\\n".join(parts)
-
-try:
-    from weasyprint import HTML
-    HTML(string=html).write_pdf("{output_path}")
-    print("OK: python-docx + weasyprint")
-except Exception as e:
-    print(f"FAIL: weasyprint={{e}}")
-''',
-        ("docx", "md"): f'''
-from docx import Document
-from pathlib import Path
-import re
-
-doc = Document("{input_path}")
-lines = []
-for para in doc.paragraphs:
-    style = para.style.name if para.style else ""
-    text = para.text.strip()
-    if not text:
-        lines.append("")
-        continue
-    if style.startswith("Heading"):
-        try:
-            level = int(style.replace("Heading ", "").replace("Heading", ""))
-        except:
-            level = 1
-        lines.append("#" * level + " " + text)
-    elif style == "Title":
-        lines.append("# " + text)
-    elif style.startswith("List"):
-        lines.append("- " + text)
-    else:
-        lines.append(text)
-
-# 表格
-for table in doc.tables:
-    lines.append("")
-    for i, row in enumerate(table.rows):
-        cells = [cell.text.strip() for cell in row.cells]
-        lines.append("| " + " | ".join(cells) + " |")
-        if i == 0:
-            lines.append("|" + "|".join(["---"] * len(cells)) + "|")
-    lines.append("")
-
-Path("{output_path}").write_text("\\n".join(lines), encoding="utf-8")
-print("OK")
-''',
-        ("docx", "txt"): f'''
-from docx import Document
-doc = Document("{input_path}")
-text = "\\n".join(para.text for para in doc.paragraphs)
-# 表格
-for table in doc.tables:
-    text += "\\n\\n"
-    for row in table.rows:
-        text += "\\t".join(cell.text for cell in row.cells) + "\\n"
-open("{output_path}", "w", encoding="utf-8").write(text)
-print("OK")
-''',
-        ("docx", "html"): f'''
-from docx import Document
-from pathlib import Path
-doc = Document("{input_path}")
-html_parts = ["<html><head><meta charset='utf-8'></head><body>"]
-for para in doc.paragraphs:
-    style = para.style.name if para.style else ""
-    text = para.text.strip()
-    if not text:
-        html_parts.append("<br>")
-    elif style.startswith("Heading"):
-        try:
-            level = int(style.replace("Heading ", "").replace("Heading", ""))
-        except:
-            level = 1
-        html_parts.append(f"<h{{level}}>{{text}}</h{{level}}>")
-    else:
-        html_parts.append(f"<p>{{text}}</p>")
-for table in doc.tables:
-    html_parts.append("<table border='1'>")
-    for i, row in enumerate(table.rows):
-        tag = "th" if i == 0 else "td"
-        cells = "".join(f"<{{tag}}>{{cell.text.strip()}}</{{tag}}>" for cell in row.cells)
-        html_parts.append(f"<tr>{{cells}}</tr>")
-    html_parts.append("</table>")
-html_parts.append("</body></html>")
-Path("{output_path}").write_text("\\n".join(html_parts), encoding="utf-8")
-print("OK")
-''',
-        ("pdf", "md"): f'''
-from pypdf import PdfReader
-from pathlib import Path
-
-reader = PdfReader("{input_path}")
-lines = []
-for i, page in enumerate(reader.pages):
-    text = page.extract_text()
-    if text:
-        lines.append(f"## 第 {{i+1}} 页\\n")
-        lines.append(text.strip())
-        lines.append("")
-Path("{output_path}").write_text("\\n".join(lines), encoding="utf-8")
-print("OK")
-''',
-        ("pdf", "txt"): f'''
-from pypdf import PdfReader
-reader = PdfReader("{input_path}")
-text = "\\n\\n".join(page.extract_text() or "" for page in reader.pages)
-open("{output_path}", "w", encoding="utf-8").write(text)
-print("OK")
-''',
-        ("pdf", "html"): f'''
-from pypdf import PdfReader
-from pathlib import Path
-reader = PdfReader("{input_path}")
-parts = ["<html><head><meta charset='utf-8'></head><body>"]
-for i, page in enumerate(reader.pages):
-    text = page.extract_text() or ""
-    parts.append(f"<h2>第 {{i+1}} 页</h2>")
-    for line in text.split("\\n"):
-        line = line.strip()
-        if line:
-            parts.append(f"<p>{{line}}</p>")
-parts.append("</body></html>")
-Path("{output_path}").write_text("\\n".join(parts), encoding="utf-8")
-print("OK")
-''',
-        ("xlsx", "csv"): f'''
-from openpyxl import load_workbook
-import os, csv
-
-wb = load_workbook("{input_path}")
-out_dir = os.path.dirname("{output_path}") or "."
-base = os.path.splitext(os.path.basename("{input_path}"))[0]
-files = []
-for ws in wb.worksheets:
-    fname = os.path.join(out_dir, f"{{base}}_{{ws.title}}.csv") if len(wb.worksheets) > 1 else "{output_path}"
-    with open(fname, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-        for row in ws.iter_rows(values_only=True):
-            writer.writerow(row)
-    files.append(fname)
-print(f"OK: {{','.join(os.path.basename(f) for f in files)}}")
-''',
-        ("xlsx", "html"): f'''
-from openpyxl import load_workbook
-from pathlib import Path
-wb = load_workbook("{input_path}")
-parts = ["<html><head><meta charset='utf-8'></head><body>"]
-for ws in wb.worksheets:
-    parts.append(f"<h2>{{ws.title}}</h2>")
-    parts.append("<table border='1'>")
-    for row in ws.iter_rows(values_only=True):
-        cells = "".join(f"<td>{{str(c) if c is not None else ''}}</td>" for c in row)
-        parts.append(f"<tr>{{cells}}</tr>")
-    parts.append("</table>")
-parts.append("</body></html>")
-Path("{output_path}").write_text("\\n".join(parts), encoding="utf-8")
-print("OK")
-''',
-        ("pptx", "pdf"): f'''
-import subprocess
-r = subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", "{os.path.dirname(output_path) or "."}", "{input_path}"],
-                   capture_output=True, text=True, timeout=120)
-if r.returncode == 0:
-    print("OK")
-else:
-    print(f"FAIL: {{r.stderr}}")
-''',
-        ("md", "html"): f'''
-from pathlib import Path
-import markdown
-text = Path("{input_path}").read_text(encoding="utf-8")
-html = markdown.markdown(text, extensions=["tables", "fenced_code", "toc"])
-full = f"<html><head><meta charset='utf-8'></head><body>{{html}}</body></html>"
-Path("{output_path}").write_text(full, encoding="utf-8")
-print("OK")
-''',
-        ("md", "docx"): f'''
-from docx import Document
-from docx.shared import Pt
-from pathlib import Path
-import re
-
-text = Path("{input_path}").read_text(encoding="utf-8")
-doc = Document()
-for line in text.split("\\n"):
-    stripped = line.strip()
-    if not stripped:
-        continue
-    if stripped.startswith("# "):
-        doc.add_heading(stripped[2:], level=1)
-    elif stripped.startswith("## "):
-        doc.add_heading(stripped[3:], level=2)
-    elif stripped.startswith("### "):
-        doc.add_heading(stripped[4:], level=3)
-    elif stripped.startswith("- ") or stripped.startswith("* "):
-        doc.add_paragraph(stripped[2:], style="List Bullet")
-    elif stripped.startswith("|"):
-        # 简单表格处理
-        cells = [c.strip() for c in stripped.strip("|").split("|")]
-        if not hasattr(doc, '_table_started') or not doc._table_started:
-            table = doc.add_table(rows=1, cols=len(cells))
-            table.style = "Table Grid"
-            for i, c in enumerate(cells):
-                table.rows[0].cells[i].text = c
-            doc._table = table
-            doc._table_row = 0
-            doc._table_started = True
-        elif not all(c == "---" for c in cells):
-            row = doc._table.add_row()
-            for i, c in enumerate(cells):
-                if i < len(row.cells):
-                    row.cells[i].text = c
-        doc._table_row += 1
-    else:
-        doc.add_paragraph(stripped)
-doc.save("{output_path}")
-print("OK")
-''',
-        ("md", "pdf"): f'''
-# md → html → pdf（用 weasyprint 或 wkhtmltopdf）
-from pathlib import Path
-import markdown
-
-text = Path("{input_path}").read_text(encoding="utf-8")
-html_body = markdown.markdown(text, extensions=["tables", "fenced_code", "toc"])
-html = "<html><head><meta charset='utf-8'>\\n<style>\\n" \\
-    "body {{ font-family: sans-serif; max-width: 800px; margin: 40px auto; }}\\n" \\
-    "table {{ border-collapse: collapse; width: 100%; }}\\n" \\
-    "th, td {{ border: 1px solid #ddd; padding: 8px; }}\\n" \\
-    "pre {{ background: #f5f5f5; padding: 12px; overflow-x: auto; }}\\n" \\
-    "code {{ background: #f5f5f5; padding: 2px 4px; }}\\n" \\
-    "</style></head><body>" + html_body + "</body></html>"
-
-# 先写 html
-html_path = "{output_path}.html"
-Path(html_path).write_text(html, encoding="utf-8")
-
-# 尝试 weasyprint
-try:
-    from weasyprint import HTML
-    HTML(string=html).write_pdf("{output_path}")
-    print("OK: weasyprint")
-except Exception as e1:
-    # 降级 wkhtmltopdf
-    import subprocess
-    try:
-        r = subprocess.run(["wkhtmltopdf", html_path, "{output_path}"],
-                          capture_output=True, text=True, timeout=60)
-        if r.returncode == 0:
-            print("OK: wkhtmltopdf")
-        else:
-            # 降级 libreoffice
-            r2 = subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf",
-                                "--outdir", "{os.path.dirname(output_path) or '.'}", html_path],
-                               capture_output=True, text=True, timeout=120)
-            if r2.returncode == 0:
-                print("OK: libreoffice via html")
-            else:
-                print(f"FAIL: weasyprint={{e1}}, wkhtmltopdf={{r.stderr}}")
-    except FileNotFoundError:
-        print(f"FAIL: no pdf converter available (weasyprint={{e1}})")
-''',
-        ("html", "pdf"): f'''
-import subprocess
-# 优先 wkhtmltopdf（保留 CSS 样式最好）
-r1 = subprocess.run(["wkhtmltopdf", "{input_path}", "{output_path}"],
-                    capture_output=True, text=True, timeout=60)
-if r1.returncode == 0:
-    print("OK: wkhtmltopdf")
-else:
-    # 降级 weasyprint
-    try:
-        from weasyprint import HTML
-        HTML(filename="{input_path}").write_pdf("{output_path}")
-        print("OK: weasyprint")
-    except Exception as e:
-        # 降级 libreoffice
-        r3 = subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf",
-                            "--outdir", "{os.path.dirname(output_path) or '.'}", "{input_path}"],
-                           capture_output=True, text=True, timeout=120)
-        print(f"OK: libreoffice" if r3.returncode == 0 else f"FAIL: {{e}}")
-''',
-        ("html", "docx"): f'''
-import subprocess
-r = subprocess.run(["libreoffice", "--headless", "--convert-to", "docx",
-                    "--outdir", "{os.path.dirname(output_path) or '.'}", "{input_path}"],
-                   capture_output=True, text=True, timeout=120)
-print("OK" if r.returncode == 0 else f"FAIL: {{r.stderr}}")
-''',
-        # .doc 老格式 → 统一走 libreoffice
-        ("doc", "pdf"): f'''
-import subprocess
-r = subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", "{os.path.dirname(output_path) or "."}", "{input_path}"],
-                   capture_output=True, text=True, timeout=120)
-print("OK" if r.returncode == 0 else f"FAIL: {{r.stderr}}")
-''',
-        ("doc", "docx"): f'''
-import subprocess
-r = subprocess.run(["libreoffice", "--headless", "--convert-to", "docx", "--outdir", "{os.path.dirname(output_path) or "."}", "{input_path}"],
-                   capture_output=True, text=True, timeout=120)
-print("OK" if r.returncode == 0 else f"FAIL: {{r.stderr}}")
-''',
-    }
-
-    key = (input_ext, target)
-    if key not in scripts:
-        return f"（不支持的转换: {input_ext} → {target}。支持: doc/docx→pdf/docx/md/txt/html, pdf→md/txt/html, xlsx→csv/html, pptx→pdf, md→pdf/docx/html, html→pdf/docx）"
-
-    # 自动安装依赖（按需。libreoffice 太大不自动装，对应的转换路径用纯 Python 方案）
-    needs = set()
-    script_content = scripts[key]
-    if "from weasyprint" in script_content or "import markdown" in script_content:
-        needs.add("weasyprint")
-
-    for dep in needs:
-        if dep == "weasyprint":
-            sb.exec("pip install weasyprint markdown -q 2>/dev/null || true", timeout=60)
-
-    # 写入脚本文件并执行（write_file 会自动加 /workspace/ 前缀）
-    script_content = scripts[key]
-    script_path = "_convert_script.py"
-    sb.write_file(script_path, script_content)
-
-    exit_code, output = sb.exec(f"python3 /workspace/{script_path}", timeout=300)
-    result_text = output.strip()
-
-    if exit_code != 0 or "FAIL" in result_text:
-        return f"（转换失败: {result_text[-300:]}）"
-
-    # 验证输出文件存在
-    exit_code2, ls_output = sb.exec(f"ls -la {output_path}")
-    if exit_code2 != 0:
-        return f"（转换似乎成功，但输出文件未找到: {output_path}）"
-
-    return f"✓ 文档转换成功: {input_path} → {output_path}\n调用 sandbox_export_file(\"{output_path}\") 导出给用户。"
-
-
-@tool
 def load_skill(skill_name: str) -> str:
     """加载指定技能的完整指导内容。
 
@@ -806,10 +376,13 @@ def search_skills(query: str) -> str:
 
         return output
     except subprocess.TimeoutExpired:
+        logger.warning("搜索技能超时: query=%s", query)
         return "（搜索超时，请稍后重试）"
     except FileNotFoundError:
+        logger.warning("npx 未安装，无法搜索技能")
         return "（npx 未安装，无法搜索技能）"
     except Exception as exc:
+        logger.warning("搜索技能失败: query=%s err=%s", query, exc)
         return f"（搜索失败: {exc}）"
 
 
@@ -830,8 +403,8 @@ def install_skill(package: str) -> str:
         package: 技能包名（如 "vercel-labs/agent-skills@vercel-react-best-practices"）
     """
     from server.agent.skills import list_available_skills
-    from server.user_settings import user_settings
-    from server.logging_config import get_logger
+    from server.core.user_settings import user_settings
+    from server.core.logging_config import get_logger
 
     logger = get_logger(__name__)
 
@@ -873,10 +446,13 @@ def install_skill(package: str) -> str:
         )
 
     except subprocess.TimeoutExpired:
+        logger.warning("安装技能超时: package=%s", package)
         return "（安装超时，请稍后重试）"
     except FileNotFoundError:
+        logger.warning("npx 未安装，无法安装技能")
         return "（npx 未安装，无法安装技能）"
     except Exception as exc:
+        logger.error("安装技能失败: package=%s err=%s", package, exc)
         return f"（安装失败: {exc}）"
 
 
@@ -892,7 +468,6 @@ def get_agent_tools() -> list:
         sandbox_read_file,
         sandbox_list_files,
         sandbox_export_file,
-        convert_document,
         load_skill,
         search_skills,
         install_skill,

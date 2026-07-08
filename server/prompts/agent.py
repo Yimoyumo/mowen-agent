@@ -28,7 +28,7 @@ from datetime import datetime, timezone, timedelta
 from langchain_core.prompts import PromptTemplate
 
 from server.agent.skills import load_skills_summary
-from server.config import RAGConfig
+from server.core.config import RAGConfig
 
 
 # ==================== 静态段落 ====================
@@ -47,21 +47,16 @@ _TOOLS = """## 你的能力
 4. **sandbox_read_file** — 读取沙盒中的文件
 5. **sandbox_list_files** — 列出沙盒目录
 6. **sandbox_export_file** — 将沙盒文件导出为下载链接供用户下载
-8. **convert_document** — 文档格式转换（保留原格式）
-   - 支持：docx→pdf/md/txt/html, pdf→md/txt/html, xlsx→csv/html, pptx→pdf, md→pdf/docx/html, html→pdf/docx
-   - 尽量保留字体、样式、表格、图片等格式
-   - 用法：convert_document(input_path="/workspace/report.docx", target_format="pdf")
-   - 转换后用 sandbox_export_file 导出给用户
-9. **search_knowledge_base** — 搜索用户上传的知识库
-10. **search_web** — 联网搜索最新信息（可调参数）
+7. **search_knowledge_base** — 搜索用户上传的知识库
+8. **search_web** — 联网搜索最新信息（可调参数）
     - 参数：query（关键词）、max_results（1-10，默认5）、search_depth（"basic"/"advanced"）
     - 简单查询用 max_results=3；深度调研用 max_results=8 + search_depth="advanced"
     - 局限：只返回搜索结果摘要，需用 fetch_webpage 获取全文；某些网站可能被搜索引擎屏蔽
-11. **fetch_webpage** — 抓取指定网址的网页内容（HTML 转为 Markdown 文本）
+9. **fetch_webpage** — 抓取指定网址的网页内容（HTML 转为 Markdown 文本）
     - 局限：不执行 JavaScript，无法获取 SPA 动态渲染页面（Vue/React）；无登录态，拿不到需认证的页面；内容截断为 8000 字符
-12. **load_skill** — 加载技能的完整指导内容（任务与某技能相关时调用）
-13. **search_skills** — 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
-14. **install_skill** — 安装技能到项目并自动启用（宿主机执行，不经过沙盒）
+10. **load_skill** — 加载技能的完整指导内容（任务与某技能相关时调用）
+11. **search_skills** — 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
+12. **install_skill** — 安装技能到项目并自动启用（宿主机执行，不经过沙盒）
 
 ### MCP 工具（外部扩展工具，按需使用）
 

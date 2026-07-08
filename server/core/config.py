@@ -92,26 +92,26 @@ class RAGConfig:
 
     def get_active_model_context_window(self) -> int:
         """获取当前选中模型的上下文窗口大小（token 数）。"""
-        from server.model_context import get_model_context_window
+        from server.llm.model_context import get_model_context_window
         return get_model_context_window(self.active_model)
 
     def get_active_model_max_output(self) -> int:
         """获取当前选中模型的最大输出 token 数。"""
-        from server.model_context import get_model_max_output
+        from server.llm.model_context import get_model_max_output
         return get_model_max_output(self.active_model)
 
     def get_active_model_info(self) -> dict:
         """获取当前选中模型的完整信息（支持用户自定义覆盖）。"""
-        from server.model_context import get_model_info_with_overrides
+        from server.llm.model_context import get_model_info_with_overrides
         info = get_model_info_with_overrides(self.active_model)
         return {"context_window": info["context_window"], "max_output": info["max_output"], "has_vision": info.get("has_vision", False)}
 
     def has_active_model_vision(self) -> bool:
         """当前选中模型是否支持视觉（多模态）。"""
-        from server.model_context import get_model_info_with_overrides
+        from server.llm.model_context import get_model_info_with_overrides
         return get_model_info_with_overrides(self.active_model).get("has_vision", False)
 
     @classmethod
     def from_settings(cls) -> "RAGConfig":
-        from server.user_settings import build_config, user_settings
+        from server.core.user_settings import build_config, user_settings
         return build_config(user_settings.load())

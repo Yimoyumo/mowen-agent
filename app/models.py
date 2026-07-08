@@ -19,12 +19,6 @@ class ChatRequest(BaseModel):
     session_id: str | None = None   # 会话 ID，用于沙盒跨消息持久化
 
 
-class AskRequest(BaseModel):
-    """旧版 RAG 问答请求（保留兼容）。"""
-    question: str
-    kb_id: str | None = None
-
-
 class CreateKnowledgeBaseRequest(BaseModel):
     """创建知识库请求。"""
     name: str                       # 知识库名称（必填）
@@ -33,13 +27,6 @@ class CreateKnowledgeBaseRequest(BaseModel):
 
 
 # ==================== 响应模型 ====================
-
-class AskResponse(BaseModel):
-    """旧版 RAG 问答响应。"""
-    question: str
-    answer: str
-    contexts: list[str]             # 检索到的参考上下文文本列表
-
 
 class KnowledgeBaseResponse(BaseModel):
     """知识库列表/详情响应。"""

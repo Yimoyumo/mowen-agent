@@ -13,7 +13,7 @@ from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import FileResponse
 
 from app.errors import ForbiddenError, NotFoundError, ValidationError
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()

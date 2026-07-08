@@ -19,8 +19,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.errors import NotFoundError, ValidationError
-from server.conversation_store import conv_store
-from server.logging_config import get_logger
+from server.core.conversation_store import conv_store
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()

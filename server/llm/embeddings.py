@@ -9,8 +9,8 @@
 from langchain_community.embeddings import ZhipuAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
-from server.config import RAGConfig, _split_model_ref
-from server.logging_config import get_logger
+from server.core.config import RAGConfig, _split_model_ref
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

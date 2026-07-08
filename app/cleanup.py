@@ -25,7 +25,7 @@ import shutil
 import time
 from pathlib import Path
 
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

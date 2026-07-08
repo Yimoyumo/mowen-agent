@@ -9,8 +9,8 @@ from pathlib import Path
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-from server.config import RAGConfig
-from server.embeddings import get_embeddings
+from server.core.config import RAGConfig
+from server.llm.embeddings import get_embeddings
 
 
 def _get_collection_persist_dir(

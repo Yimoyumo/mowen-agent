@@ -201,7 +201,7 @@ def _load_user_overrides() -> dict:
         }
     """
     try:
-        from server.user_settings import user_settings
+        from server.core.user_settings import user_settings
         settings = user_settings.load()
         return settings.get("model_context_overrides", {})
     except Exception:

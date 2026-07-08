@@ -3,15 +3,15 @@
 从 user_settings.json 读取预设厂商，从 API 拉取模型列表。
 
 用法：
-    from server.provider_config import list_preset_providers, fetch_models
+    from server.llm.provider_config import list_preset_providers, fetch_models
     providers = list_preset_providers()
     models = fetch_models("deepseek", api_key="sk-xxx")
 """
 
 import requests
 
-from server.config import RAGConfig
-from server.logging_config import get_logger
+from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

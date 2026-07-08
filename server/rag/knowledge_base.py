@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from server.config import RAGConfig
-from server.db import db
-from server.logging_config import get_logger
+from server.core.config import RAGConfig
+from server.core.db import db
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

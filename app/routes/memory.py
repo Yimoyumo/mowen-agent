@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.errors import NotFoundError, ValidationError
 from server.agent.memory import memory_store
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()

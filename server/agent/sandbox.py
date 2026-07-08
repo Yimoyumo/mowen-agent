@@ -19,7 +19,7 @@ from pathlib import Path
 import docker
 from docker.errors import DockerException, NotFound
 
-from server.logging_config import get_logger
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -52,7 +52,8 @@ class Sandbox:
         image = _SANDBOX_IMAGE
         try:
             client.images.get(image)
-        except Exception:
+        except Exception as e:
+            logger.warning("沙盒镜像 %s 不可用，回退到 python:3.12-slim: %s", image, e)
             image = "python:3.12-slim"
 
         self._container = client.containers.run(
@@ -86,6 +87,8 @@ class Sandbox:
             try:
                 self._container.reload()
             except Exception:
+                logger.warning("沙盒容器已关闭: session=%s container=%s", 
+                                getattr(self, '_session_id', '?'), self.container_id)
                 return -1, "（沙盒容器已关闭，请重新开始对话）"
 
             # 用 timeout 命令包裹，防止死循环/长等待卡住 Agent
@@ -105,6 +108,8 @@ class Sandbox:
             return exit_code, output
 
         except Exception as exc:
+            logger.error("沙盒命令执行失败: container=%s cmd=%s err=%s", 
+                        self.container_id, command[:100], exc)
             return -1, f"（沙盒命令执行失败: {exc}）"
 
     def write_file(self, path: str, content: str) -> None:
@@ -146,9 +151,13 @@ class Sandbox:
                 timeout=30,
             )
             if cp_result.returncode != 0:
+                logger.warning("docker cp 导出失败: container=%s path=%s stderr=%s",
+                               self.container_id, resolved, cp_result.stderr[:200])
                 return None
             return token, filename
-        except Exception:
+        except Exception as exc:
+            logger.error("导出文件异常: container=%s path=%s err=%s",
+                         self.container_id, resolved, exc)
             return None
 
     def import_file(self, host_path: str, container_subpath: str | None = None) -> str | None:
@@ -168,17 +177,24 @@ class Sandbox:
                 timeout=10,
             )
             if cp_result.returncode != 0:
+                logger.warning("docker cp 导入失败: container=%s src=%s stderr=%s",
+                               self.container_id, src, cp_result.stderr[:200])
                 return None
             return dest
-        except Exception:
+        except Exception as exc:
+            logger.error("导入文件异常: container=%s src=%s err=%s",
+                         self.container_id, src, exc)
             return None
 
     def destroy(self) -> None:
         """销毁沙盒容器。"""
         try:
             self._container.remove(force=True)
-        except (NotFound, Exception):
-            pass
+        except NotFound:
+            pass  # 容器已不存在，正常
+        except Exception as exc:
+            logger.warning("销毁沙盒容器失败: container=%s err=%s",
+                           self.container_id, exc)
 
 
 # ==================== 沙盒池：按 session_id 管理 ====================
@@ -240,8 +256,8 @@ def get_or_create(session_id: str) -> Sandbox:
                 entry["last_active"] = time.time()
                 logger.debug("沙盒复用: session=%s", session_id)
                 return entry["sandbox"]
-            except Exception:
-                logger.info("沙盒容器已失效，重建: session=%s", session_id)
+            except Exception as exc:
+                logger.info("沙盒容器已失效，重建: session=%s err=%s", session_id, exc)
                 del _sandbox_pool[session_id]
 
         if len(_sandbox_pool) >= _MAX_SANDBOXES:
@@ -249,8 +265,8 @@ def get_or_create(session_id: str) -> Sandbox:
             old = _sandbox_pool.pop(oldest_id)
             try:
                 old["sandbox"].destroy()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("淘汰沙盒销毁失败: session=%s err=%s", oldest_id, exc)
             logger.warning("沙盒池已满，淘汰: session=%s", oldest_id)
 
         sb = Sandbox()
@@ -287,7 +303,8 @@ def get(session_id: str) -> Sandbox | None:
             entry["sandbox"]._container.reload()
             entry["last_active"] = time.time()
             return entry["sandbox"]
-        except Exception:
+        except Exception as exc:
+            logger.warning("沙盒已失效: session=%s err=%s", session_id, exc)
             del _sandbox_pool[session_id]
             return None
 
@@ -309,8 +326,8 @@ def destroy_all() -> None:
     for session_id, entry in items:
         try:
             entry["sandbox"].destroy()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("销毁沙盒失败: session=%s err=%s", session_id, exc)
     if items:
         logger.info("已销毁全部沙盒: %d 个", len(items))
 

@@ -63,19 +63,6 @@ export interface KnowledgeBaseType {
   label: string
 }
 
-// ==================== 旧版 RAG 类型（保留兼容） ====================
-
-export interface AskRequest {
-  question: string
-  kb_id?: string
-}
-
-export interface AskResponse {
-  question: string
-  answer: string
-  contexts: string[]
-}
-
 // ==================== 配置类型 ====================
 
 export interface ConfigResponse {
@@ -139,14 +126,6 @@ export interface StreamingChatCallbacks {
   onToolStart?: (tool: string, input: string) => void
   onToolEnd?: (tool: string, output: string) => void
   onDone?: (stats?: { input_tokens: number; output_tokens: number; context_window: number }) => void
-  onError?: (message: string) => void
-}
-
-export interface StreamingAskCallbacks {
-  onQuestion?: (question: string) => void
-  onContexts?: (contexts: string[]) => void
-  onToken?: (token: string) => void
-  onDone?: () => void
   onError?: (message: string) => void
 }
 

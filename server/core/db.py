@@ -9,7 +9,7 @@ SQLite 连接管理 + 表初始化 + 迁移工具。
 - JSON 迁移：从 knowledge_bases.json 自动导入旧数据
 
 用法：
-    from server.db import db
+    from server.core.db import db
 
     # 应用启动时初始化
     db.init()
@@ -28,8 +28,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from server.config import RAGConfig
-from server.logging_config import get_logger
+from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -185,7 +185,8 @@ class Database:
         # 查找旧 JSON 文件
         try:
             config = RAGConfig.from_settings()
-        except Exception:
+        except Exception as exc:
+            logger.warning("迁移跳过: 无法加载配置: %s", exc)
             return
 
         json_path = Path(config.vector_store_dir) / "knowledge_bases.json"

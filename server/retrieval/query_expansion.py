@@ -7,8 +7,8 @@
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from server.config import RAGConfig
-from server.llm import get_chat_model
+from server.core.config import RAGConfig
+from server.llm.factory import get_chat_model
 from server.prompts import QUERY_EXPANSION_PROMPT, EXPANSION_SYSTEM_MSG
 
 
