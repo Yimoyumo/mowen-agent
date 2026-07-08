@@ -179,7 +179,21 @@ def build_config(settings: dict):
 
 
 class UserSettings:
+    def __init__(self):
+        self._cached_data: dict | None = None
+        self._cached_mtime: float | None = None
+
     def load(self):
+        """读取用户设置。使用 mtime 缓存，文件未变时直接返回缓存。"""
+        # 检查文件 mtime 是否与缓存一致
+        try:
+            current_mtime = _SETTINGS_FILE.stat().st_mtime if _SETTINGS_FILE.exists() else 0
+        except OSError:
+            current_mtime = 0
+
+        if self._cached_data is not None and current_mtime == self._cached_mtime:
+            return self._cached_data
+
         import fcntl
         if not _SETTINGS_FILE.exists():
             data = deepcopy(_DEFAULT_SETTINGS)
@@ -201,7 +215,11 @@ class UserSettings:
             return self._merge({})
         if "active_provider" in data and "active_model" not in data:
             data = self._migrate(data)
-        return self._merge(data)
+
+        merged = self._merge(data)
+        self._cached_data = merged
+        self._cached_mtime = current_mtime
+        return merged
 
     def save(self, data):
         import fcntl
@@ -219,6 +237,12 @@ class UserSettings:
             finally:
                 fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
         logger.info("settings saved")
+        # 保存后刷新缓存（同时更新 mtime，避免重复读盘）
+        self._cached_data = self._merge(deepcopy(data))
+        try:
+            self._cached_mtime = _SETTINGS_FILE.stat().st_mtime
+        except OSError:
+            self._cached_mtime = None
 
     def update(self, updates):
         cur = self.load(); merged = self._deep_merge(cur, updates)

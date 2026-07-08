@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
 import ContextPanel from '@/components/chat/ContextPanel.vue'
@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/chat'
 import { useSettings } from '@/composables/useSettings'
 import { updateSettings } from '@/api/settingsApi'
 import { getConfig } from '@/api/configApi'
+import { apiClient } from '@/api'
 import { ElMessage } from 'element-plus'
 
 const { config, isReady } = useConfig()
@@ -74,6 +75,19 @@ const modelOptions = computed(() => {
 
 const activeModel = computed(() => providers.value?.active_model || '')
 
+// 模型视觉能力映射
+const modelVisionMap = ref<Record<string, boolean>>({})
+
+watch(providers, async (p) => {
+  if (!p) return
+  try {
+    const res = await apiClient.get('/settings/model-vision')
+    modelVisionMap.value = res.data
+  } catch {
+    // 获取失败静默忽略
+  }
+}, { immediate: true })
+
 function handleSwitchModel(ref: string) {
   handleSelectModel(ref)
 }
@@ -98,6 +112,11 @@ async function handleUpdateReasoningEffort(val: string) {
     ElMessage.error('保存失败')
   }
 }
+
+// 应用启动时：从后端同步对话历史
+onMounted(() => {
+  chatStore.syncFromBackend()
+})
 </script>
 
 <template>
@@ -136,6 +155,7 @@ async function handleUpdateReasoningEffort(val: string) {
         :config="config"
         :model-options="modelOptions"
         :active-model="activeModel"
+        :model-vision-map="modelVisionMap"
         :token-stats="tokenStats"
         @send="(files: any) => sendMessage(undefined, files)"
         @stop="stopStreaming"

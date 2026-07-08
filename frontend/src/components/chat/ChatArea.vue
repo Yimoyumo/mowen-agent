@@ -18,6 +18,7 @@ import type { ChatMessage as ChatMessageType, ConfigResponse } from '@/types/api
   showReasoning: boolean
   modelOptions?: string[]
   activeModel?: string
+  modelVisionMap?: Record<string, boolean>
   tokenStats?: { input_tokens: number; output_tokens: number; context_window: number } | null
 }
 
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<Props>(), {
   config: null,
   modelOptions: () => [],
   activeModel: '',
+  modelVisionMap: () => ({}),
   tokenStats: null,
 })
 const emit = defineEmits<{
@@ -181,6 +183,7 @@ defineExpose({ scrollToBottom })
           :contexts="msg.contexts"
           :reasoning="msg.reasoning"
           :segments="msg.segments"
+          :files="msg.files"
           @toggle-context="emit('toggleContext')"
         />
       </template>
@@ -194,6 +197,7 @@ defineExpose({ scrollToBottom })
       :current-kb-id="currentKbId"
       :model-options="modelOptions"
       :active-model="activeModel"
+      :model-vision-map="modelVisionMap"
       @update:model-value="emit('update:question', $event)"
       @send="(files: any) => emit('send', files)"
       @stop="emit('stop')"

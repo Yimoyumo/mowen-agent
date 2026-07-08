@@ -11,6 +11,7 @@ LLM 自主决定调用工具或直接回答，支持流式输出。
 """
 
 import asyncio
+from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
@@ -139,8 +140,14 @@ async def chat_stream(
     uploaded_info = ""
     if uploaded_files and sb:
         parts = []
+        image_count = 0
         for f in uploaded_files:
             host_path = f"uploads/{f['token']}/{f['filename']}"
+            # 图片不导入沙盒（视觉模型直接看图，沙盒不需要处理图片）
+            suffix = Path(f["filename"]).suffix.lower() if f.get("filename") else ""
+            if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+                image_count += 1
+                continue
             dest = sb.import_file(host_path)
             if dest:
                 parts.append(f"- {f['filename']} → {dest}")
@@ -149,15 +156,24 @@ async def chat_stream(
         if parts:
             uploaded_info = "(系统提示：用户本次上传了以下文件，已导入沙盒，可直接处理。)\n" + "\n".join(parts)
 
+        # 记录文件到沙盒管理器，沙盒重建时自动重新导入
+        if uploaded_files:
+            from server.agent.sandbox import track_session_files
+            track_session_files(session_id, uploaded_files)
+
+        if image_count > 0 and config and config.has_active_model_vision():
+            hint = "（系统提示：用户上传了图片，图片内容已直接展示在你的视野中。请直接观察并回答图片相关问题，无需调用工具查看或处理图片。仅当用户明确要求编辑/转换图片时才使用沙盒工具。）"
+            uploaded_info = (uploaded_info + "\n\n" + hint) if uploaded_info else hint
+
     try:
         # 构建 LangChain 消息列表（根据模型上下文窗口自动截断）
-        lc_messages, input_tokens = _build_messages(messages, config)
+        lc_messages, input_tokens = _build_messages(messages, config, uploaded_files)
 
         if not stream:
             graph = _build_graph(extra_tools=mcp_tools, config=config, uploaded_info=uploaded_info, memory_prompt=memory_prompt, persona_prompt=persona_prompt, profile_prompt=profile_prompt)
             result = await graph.ainvoke(
                 {"messages": lc_messages},
-                config={"recursion_limit": 50},
+                config={"recursion_limit": 100},
             )
             final = result["messages"][-1]
             output_tokens = _estimate_tokens(str(final.content))
@@ -204,27 +220,93 @@ async def chat_stream(
 
 # ==================== 内部实现 ====================
 
-def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None) -> tuple[list, int]:
-    """将前端消息列表转为 LangChain 消息对象。
+def _compress_and_encode_image(filepath: str, max_size: int = 1024, quality: int = 75) -> str | None:
+    """压缩图片并返回 base64 编码。
 
-    系统提示词由 create_react_agent 的 prompt 参数注入（在 _build_graph 中），
-    这里只需构建对话历史消息。
-
-    如果配置了 max_context_tokens 或模型有上下文窗口限制，
-    从最旧的消息开始丢弃，确保总 token 数不超过限制。
+    将图片缩小到 max_size px（最长边），转 JPEG 压缩，
+    大幅减少 token 消耗。典型效果：2MB PNG → 80KB JPEG → ~20K tokens。
 
     Returns:
-        (messages, total_tokens) — 消息列表和总 token 估算值
+        base64 编码字符串，失败返回 None
     """
+    import io
+    import base64
+    from PIL import Image
+
+    try:
+        img = Image.open(filepath)
+        w, h = img.size
+        if max(w, h) > max_size:
+            ratio = max_size / max(w, h)
+            img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        raw = buf.getvalue()
+        logger.debug("图片压缩: %s (%dx%d → %dx%d, %d bytes)",
+                     filepath, w, h, img.width, img.height, len(raw))
+        return base64.b64encode(raw).decode("utf-8")
+    except Exception as e:
+        logger.warning("图片压缩失败: %s (%s)", filepath, e)
+        return None
+
+
+def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None, uploaded_files: list[dict] | None = None) -> tuple[list, int]:
+    """将前端消息列表转为 LangChain 消息对象。
+
+    多模态：有视觉能力 → 压缩后的图片 base64 嵌入；无视觉 → 注入"不识图"提示。
+    Returns: (messages, total_tokens)
+    """
+    # 判断当前模型是否支持视觉
+    has_vision = config.has_active_model_vision() if config else False
+
+    # 提取本次上传的图片文件
+    image_files = []
+    if uploaded_files:
+        for f in uploaded_files:
+            filename = f.get("filename", "")
+            suffix = Path(filename).suffix.lower()
+            if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+                image_files.append(f)
+
+    # 构建“无法识图”提示（如果模型不支持视觉但用户上传了图片）
+    no_vision_hint = ""
+    if image_files and not has_vision:
+        names = ", ".join(f["filename"] for f in image_files)
+        no_vision_hint = f"\n\n（系统提示：用户上传了图片 [{names}]，但当前模型不支持视觉/识图。请在回复中告知用户当前模型无法识别图片，建议更换支持视觉的模型。）"
+
     # 先转为 LangChain 消息
     all_messages = []
-    for msg in raw_messages:
+    for i, msg in enumerate(raw_messages):
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role == "assistant":
             all_messages.append(AIMessage(content=content))
         else:
-            all_messages.append(HumanMessage(content=content))
+            # 最后一条用户消息 + 模型支持视觉 + 有图片 → 构建多模态消息
+            is_last_user = (i == len(raw_messages) - 1)
+            if is_last_user and has_vision and image_files:
+                # 构建多模态 content
+                multimodal_content = []
+                if content:
+                    multimodal_content.append({"type": "text", "text": content})
+                for f in image_files:
+                    host_path = f"uploads/{f['token']}/{f['filename']}"
+                    try:
+                        b64 = _compress_and_encode_image(host_path)
+                        if b64:
+                            multimodal_content.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                            })
+                    except Exception as e:
+                        logger.warning("读取图片失败: %s (%s)", host_path, e)
+                all_messages.append(HumanMessage(content=multimodal_content))
+            elif is_last_user and no_vision_hint:
+                all_messages.append(HumanMessage(content=content + no_vision_hint))
+            else:
+                all_messages.append(HumanMessage(content=content))
 
     # 计算截断上限
     limit = 0
@@ -270,7 +352,7 @@ async def _stream_agent(messages: list, show_reasoning: bool, extra_tools: list 
         async for event in graph.astream_events(
             {"messages": messages},
             version="v2",
-            config={"recursion_limit": 50},
+            config={"recursion_limit": 100},
         ):
             event_type = event.get("event", "")
 
@@ -320,6 +402,14 @@ async def _stream_agent(messages: list, show_reasoning: bool, extra_tools: list 
                     "tool": tool_name,
                     "output": str(output)[:500],  # 截断过长输出
                 }
+
+                # sandbox_export_file 返回了图片 markdown，注入到消息流中直接渲染
+                if tool_name == "sandbox_export_file":
+                    import re
+                    img_re = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+                    for m in img_re.finditer(str(output)):
+                        yield {"type": "token", "token": "\n\n" + m.group(0) + "\n\n"}
+                        await asyncio.sleep(0)
 
     except Exception as exc:
         logger.error("Agent 执行出错: %s", exc, exc_info=True)

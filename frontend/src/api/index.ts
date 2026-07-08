@@ -32,3 +32,17 @@ export {
   deleteMemory,
   clearMemories,
 } from './settingsApi'
+
+// 对话历史
+export {
+  listConversations,
+  getConversation,
+  createConversation,
+  updateConversation,
+  deleteConversation,
+  deleteAllConversations,
+  addMessage as apiAddMessage,
+  updateMessage as apiUpdateMessage,
+  deleteMessage as apiDeleteMessage,
+  syncConversations,
+} from './conversations'

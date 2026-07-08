@@ -32,6 +32,7 @@ def config_endpoint() -> ConfigResponse:
         enable_query_expansion=cfg.enable_query_expansion,
         context_window=info["context_window"],
         max_output=info["max_output"],
+        has_vision=info.get("has_vision", False),
         temperature=cfg.temperature,
         max_tokens=cfg.max_tokens,
         thinking=cfg.enable_thinking,

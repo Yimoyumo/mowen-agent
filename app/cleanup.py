@@ -33,7 +33,7 @@ logger = get_logger(__name__)
 _CLEANUP_INTERVAL = 3600  # 1 小时
 
 # 文件过期时间（秒）
-_UPLOADS_MAX_AGE = 3600      # uploads/ 中文件最多保留 1 小时
+_UPLOADS_MAX_AGE = 86400     # uploads/ 中文件最多保留 24 小时（与 downloads 一致）
 _DOWNLOADS_MAX_AGE = 86400   # downloads/ 中文件最多保留 24 小时
 
 # 清理的目录

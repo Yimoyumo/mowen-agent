@@ -104,7 +104,12 @@ class RAGConfig:
         """获取当前选中模型的完整信息（支持用户自定义覆盖）。"""
         from server.model_context import get_model_info_with_overrides
         info = get_model_info_with_overrides(self.active_model)
-        return {"context_window": info["context_window"], "max_output": info["max_output"]}
+        return {"context_window": info["context_window"], "max_output": info["max_output"], "has_vision": info.get("has_vision", False)}
+
+    def has_active_model_vision(self) -> bool:
+        """当前选中模型是否支持视觉（多模态）。"""
+        from server.model_context import get_model_info_with_overrides
+        return get_model_info_with_overrides(self.active_model).get("has_vision", False)
 
     @classmethod
     def from_settings(cls) -> "RAGConfig":

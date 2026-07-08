@@ -344,7 +344,7 @@ def get_model_context(model: str = "") -> dict:
     from server.model_context import get_model_generation_overrides
     gen_override = get_model_generation_overrides(model_ref)
 
-    return {"model": model_ref, **info, "generation_override": gen_override}
+    return {"model": model_ref, **info, "generation_override": gen_override, "has_vision": info.get("has_vision", False)}
 
 
 @router.put("/settings/model-context")
@@ -376,6 +376,9 @@ def set_model_context_override(body: dict) -> dict:
         entry["context_window"] = int(body["context_window"])
     if "max_output" in body:
         entry["max_output"] = int(body["max_output"])
+    # 视觉能力（可选）
+    if "has_vision" in body:
+        entry["has_vision"] = bool(body["has_vision"])
     # generation 参数（可选覆盖）
     for k in ("temperature", "thinking", "reasoning_effort", "max_tokens"):
         if k in body:
@@ -415,6 +418,28 @@ def delete_model_context_override(model: str) -> dict:
     return {"status": "ok", "model": model_ref}
 
 
+@router.get("/settings/model-vision")
+def get_model_vision_map() -> dict:
+    """获取所有模型的视觉能力映射。
+
+    返回: { "moonshot/kimi-k2.6": true, "deepseek/deepseek-v4": false, ... }
+    前端用这个来决定是否显示 👁️ 视觉标记。
+    """
+    from server.model_context import get_model_info_with_overrides
+
+    settings = user_settings.load()
+    providers = settings.get("providers", {})
+
+    result = {}
+    for pid, pdata in providers.items():
+        for model in pdata.get("models", []):
+            ref = f"{pid}/{model}"
+            info = get_model_info_with_overrides(ref)
+            result[ref] = info.get("has_vision", False)
+
+    return result
+
+
 # ==================== 工具函数 ====================
 
 _PRESET_IDS = {"deepseek", "zhipuai", "siliconflow", "moonshot", "dashscope", "openai"}
@@ -429,3 +454,185 @@ def _get_fallback_api_key(provider_id: str) -> str:
     settings = user_settings.load()
     prov = settings.get("providers", {}).get(provider_id, {})
     return prov.get("api_key", "")
+
+
+# ==================== MCP & Skills 状态 ====================
+
+@router.get("/settings/extensions")
+def get_extensions() -> dict:
+    """获取已配置的 MCP 服务器和已启用的技能列表。
+
+    返回:
+        {
+            "mcp_servers": [{"name": "filesystem", "command": "npx", ...}],
+            "skills": [{"name": "data_analysis", "description": "...", "available": true}]
+        }
+    """
+    settings = user_settings.load()
+
+    # MCP 服务器配置
+    mcp_raw = settings.get("mcp_servers", {})
+    mcp_servers = []
+    for name, cfg in mcp_raw.items():
+        transport = cfg.get("transport", cfg.get("type", "stdio"))
+        mcp_servers.append({
+            "name": name,
+            "command": cfg.get("command", ""),
+            "args": cfg.get("args", []),
+            "transport": transport,
+            "url": cfg.get("url", ""),
+        })
+
+    # 技能列表
+    from server.agent.skills import load_skills_summary, list_available_skills
+    skill_names = settings.get("skills", [])
+    available = list_available_skills()
+    skills = []
+    for name in skill_names:
+        skills.append({
+            "name": name,
+            "available": name in available,
+        })
+
+    return {
+        "mcp_servers": mcp_servers,
+        "skills": skills,
+        "available_skills": available,
+    }
+
+
+@router.post("/settings/mcp-servers/test")
+async def test_mcp_servers(body: dict = None) -> dict:
+    """测试所有 MCP 服务器的连接状态。
+
+    逐个连接每个 MCP 服务器，返回连接结果（成功/失败 + 工具数）。
+
+    Returns:
+        {"results": {"filesystem": {"ok": true, "tool_count": 14, "error": ""}, ...}}
+    """
+    import asyncio
+    from server.agent.mcp import _load_single_server_tools
+
+    settings = user_settings.load()
+    mcp_raw = settings.get("mcp_servers", {})
+
+    # 转换配置格式
+    servers = {}
+    for name, cfg in mcp_raw.items():
+        transport = cfg.get("transport", cfg.get("type", "stdio"))
+        if transport in ("stdio", "local"):
+            servers[name] = {
+                "command": cfg.get("command", ""),
+                "args": cfg.get("args", []),
+                "transport": "stdio",
+            }
+        elif transport in ("sse", "remote", "streamable_http", "http"):
+            actual = "http" if transport in ("streamable_http", "http") else "sse"
+            servers[name] = {
+                "url": cfg.get("url", ""),
+                "transport": actual,
+            }
+
+    # 并发测试
+    async def _test_one(name: str, cfg: dict) -> dict:
+        try:
+            tools = await asyncio.wait_for(
+                _load_single_server_tools(name, cfg),
+                timeout=15,
+            )
+            return {"ok": True, "tool_count": len(tools), "error": ""}
+        except asyncio.TimeoutError:
+            return {"ok": False, "tool_count": 0, "error": "连接超时（15s）"}
+        except Exception as exc:
+            return {"ok": False, "tool_count": 0, "error": str(exc)[:100]}
+
+    tasks = [_test_one(name, cfg) for name, cfg in servers.items()]
+    results_list = await asyncio.gather(*tasks)
+
+    results = {}
+    for name, result in zip(servers.keys(), results_list):
+        results[name] = result
+
+    return {"results": results}
+
+
+# ==================== MCP 服务器 CRUD ====================
+
+class McpServerCreate(BaseModel):
+    """添加 MCP 服务器。"""
+    name: str
+    command: str = ""
+    args: list[str] = []
+    transport: str = "stdio"
+    url: str = ""
+
+
+class McpServerUpdate(BaseModel):
+    """更新 MCP 服务器。"""
+    command: str | None = None
+    args: list[str] | None = None
+    transport: str | None = None
+    url: str | None = None
+
+
+@router.post("/settings/mcp-servers")
+def add_mcp_server(req: McpServerCreate) -> dict:
+    """添加一个 MCP 服务器配置。"""
+    name = req.name.strip()
+    if not name:
+        raise ValidationError("名称不能为空")
+    if req.transport == "stdio" and not req.command:
+        raise ValidationError("stdio 模式需要 command")
+
+    settings = user_settings.load()
+    mcp = settings.setdefault("mcp_servers", {})
+    if name in mcp:
+        raise ValidationError(f"MCP 服务器 '{name}' 已存在")
+
+    mcp[name] = {
+        "command": req.command,
+        "args": req.args,
+        "transport": req.transport,
+    }
+    if req.url:
+        mcp[name]["url"] = req.url
+
+    user_settings.save(settings)
+    logger.info("MCP 服务器已添加: %s", name)
+    return {"status": "ok", "name": name}
+
+
+@router.put("/settings/mcp-servers/{name}")
+def update_mcp_server(name: str, req: McpServerUpdate) -> dict:
+    """更新 MCP 服务器配置。"""
+    settings = user_settings.load()
+    mcp = settings.get("mcp_servers", {})
+    if name not in mcp:
+        raise NotFoundError(f"MCP 服务器 '{name}' 不存在")
+
+    if req.command is not None:
+        mcp[name]["command"] = req.command
+    if req.args is not None:
+        mcp[name]["args"] = req.args
+    if req.transport is not None:
+        mcp[name]["transport"] = req.transport
+    if req.url is not None:
+        mcp[name]["url"] = req.url
+
+    user_settings.save(settings)
+    logger.info("MCP 服务器已更新: %s", name)
+    return {"status": "ok"}
+
+
+@router.delete("/settings/mcp-servers/{name}")
+def delete_mcp_server(name: str) -> dict:
+    """删除 MCP 服务器。"""
+    settings = user_settings.load()
+    mcp = settings.get("mcp_servers", {})
+    if name not in mcp:
+        raise NotFoundError(f"MCP 服务器 '{name}' 不存在")
+
+    del mcp[name]
+    user_settings.save(settings)
+    logger.info("MCP 服务器已删除: %s", name)
+    return {"status": "ok"}

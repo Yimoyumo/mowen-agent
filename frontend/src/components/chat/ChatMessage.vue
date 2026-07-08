@@ -10,6 +10,7 @@ interface Props {
   contexts?: string[]
   reasoning?: string
   segments?: MessageSegment[]
+  files?: { filename: string; token: string; is_image?: boolean }[]
 }
 
 const props = defineProps<Props>()
@@ -26,6 +27,7 @@ const toolLabels: Record<string, string> = {
   sandbox_read_file: '读取文件',
   sandbox_list_files: '查看目录',
   sandbox_export_file: '导出文件',
+  convert_document: '文档转换',
   search_knowledge_base: '搜索知识库',
   search_web: '联网搜索',
 }
@@ -123,6 +125,19 @@ const hasRunningTool = computed(() =>
       <template v-else>
         <div class="message-content markdown-body" v-html="renderMarkdown(content)"></div>
       </template>
+
+      <!-- 用户消息的附件列表 -->
+      <div v-if="files && files.length > 0" class="msg-files">
+        <!-- 图片缩略图 -->
+        <div class="msg-image-preview" v-for="f in files.filter(f => f.is_image)" :key="'img-' + f.token">
+          <img :src="`/api/uploads/${f.token}/${f.filename}`" :alt="f.filename" loading="lazy" />
+        </div>
+        <!-- 非图片文件标签 -->
+        <div v-for="f in files.filter(f => !f.is_image)" :key="f.token" class="msg-file-chip">
+          <el-icon><Document /></el-icon>
+          <span class="msg-file-name">{{ f.filename }}</span>
+        </div>
+      </div>
 
       <span v-if="streaming && content" class="streaming-cursor" />
       <div v-if="streaming && !content && !reasoning && !hasRunningTool" class="typing-indicator">
@@ -419,6 +434,51 @@ const hasRunningTool = computed(() =>
   to { opacity: 0.3; }
 }
 
+.msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.msg-image-preview {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e1e4e8;
+  cursor: pointer;
+}
+
+.msg-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.msg-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: #e8f4ff;
+  border: 1px solid #d0e5ff;
+  font-size: 12px;
+  color: #409eff;
+}
+
+.msg-file-chip .el-icon {
+  font-size: 13px;
+}
+
+.msg-file-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tool-call-detail {
   padding: 8px 10px;
   border-top: 1px solid #e4e7ed;
@@ -518,17 +578,36 @@ const hasRunningTool = computed(() =>
 
 .markdown-body :deep(pre) {
   margin: 0 0 12px;
-  padding: 16px;
+  padding: 14px 16px;
+  padding-top: 30px;
   border-radius: 8px;
-  background: #1d1d1d;
+  background: #f6f8fa;
+  border: 1px solid #e1e4e8;
   overflow-x: auto;
+  position: relative;
+}
+
+.markdown-body :deep(pre)::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 10px;
+  font-size: 0.75em;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  color: #6a737d;
+  background: #eef1f4;
+  border-left: 1px solid #e1e4e8;
+  border-bottom: 1px solid #e1e4e8;
+  border-radius: 0 8px 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .markdown-body :deep(pre code) {
   padding: 0;
   background: transparent;
-  color: #f8f8f2;
-  font-size: 0.9em;
+  font-size: 0.875em;
   line-height: 1.6;
 }
 

@@ -117,10 +117,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 # 导入并注册路由模块
-from app.routes import chat, config, files, knowledge_bases, memory, settings  # noqa: E402
+from app.routes import chat, config, conversations, files, knowledge_bases, memory, settings  # noqa: E402
 from app.cleanup import start_cleanup_task  # noqa: E402
 
 app.include_router(chat.router, prefix="/api", tags=["对话"])
+app.include_router(conversations.router, prefix="/api", tags=["会话历史"])
 app.include_router(config.router, prefix="/api", tags=["配置"])
 app.include_router(files.router, prefix="/api", tags=["文件"])
 app.include_router(knowledge_bases.router, prefix="/api", tags=["知识库"])
@@ -138,9 +139,15 @@ async def _on_startup():
 
 @app.on_event("shutdown")
 async def _on_shutdown():
-    """应用关闭时执行：停止后台任务 + 销毁所有沙盒。"""
+    """应用关闭时执行：停止后台任务 + 冲洗记忆 + 销毁所有沙盒。"""
     from app.cleanup import stop_cleanup_task
     stop_cleanup_task()
+    # 立即执行待处理的记忆提取（防止 --reload 重启导致丢失）
+    try:
+        from server.agent.memory import memory_store
+        await memory_store.flush_pending_extraction()
+    except Exception as exc:
+        logger.warning("记忆提取失败: %s", exc)
     # 销毁所有沙盒容器
     try:
         from server.agent.sandbox import destroy_all

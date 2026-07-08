@@ -128,3 +128,68 @@ export async function deleteMemory(id: string): Promise<void> {
 export async function clearMemories(): Promise<void> {
   await apiClient.delete('/memories')
 }
+
+// ==================== MCP & Skills 扩展信息 ====================
+
+export interface McpServerInfo {
+  name: string
+  command: string
+  args: string[]
+  transport: string
+  url: string
+}
+
+export interface SkillInfo {
+  name: string
+  available: boolean
+}
+
+export interface ExtensionsInfo {
+  mcp_servers: McpServerInfo[]
+  skills: SkillInfo[]
+  available_skills: string[]
+}
+
+export async function getExtensions(): Promise<ExtensionsInfo> {
+  const { data } = await apiClient.get<ExtensionsInfo>('/settings/extensions')
+  return data
+}
+
+// ==================== MCP 服务器管理 ====================
+
+export async function addMcpServer(server: {
+  name: string
+  command?: string
+  args?: string[]
+  transport?: string
+  url?: string
+}): Promise<void> {
+  await apiClient.post('/settings/mcp-servers', server)
+}
+
+export async function updateMcpServer(
+  name: string,
+  updates: {
+    command?: string
+    args?: string[]
+    transport?: string
+    url?: string
+  },
+): Promise<void> {
+  await apiClient.put(`/settings/mcp-servers/${name}`, updates)
+}
+
+export async function deleteMcpServer(name: string): Promise<void> {
+  await apiClient.delete(`/settings/mcp-servers/${name}`)
+}
+
+export interface McpTestResult {
+  ok: boolean
+  tool_count: number
+  error: string
+}
+
+export async function testMcpServers(): Promise<Record<string, McpTestResult>> {
+  const { data } = await apiClient.post<{ results: Record<string, McpTestResult> }>('/settings/mcp-servers/test')
+  return data.results
+}

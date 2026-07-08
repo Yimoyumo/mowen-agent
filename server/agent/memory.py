@@ -95,6 +95,7 @@ class MemoryStore:
 
     def __init__(self):
         self._extraction_timer: asyncio.Task | None = None
+        self._pending_messages: list[dict] | None = None  # 最后一次调度的消息快照
 
     # ---- 读写 ----
 
@@ -250,8 +251,9 @@ class MemoryStore:
         必须在 async 上下文中调用（chat_stream 是 async generator）。
         如果在同步上下文中调用（如测试），跳过调度。
         """
-        # 条件检查
+        # 条件检查（带日志，方便定位为什么没触发）
         if len(messages) < _MIN_MESSAGES:
+            logger.info("记忆提取跳过：消息数 %d < %d", len(messages), _MIN_MESSAGES)
             return
 
         last_user = ""
@@ -260,14 +262,14 @@ class MemoryStore:
                 last_user = m.get("content", "")
                 break
         if len(last_user.strip()) < _MIN_USER_MSG_LEN:
+            logger.info("记忆提取跳过：最后一条用户消息太短 (%d 字)", len(last_user.strip()))
             return
 
         # 检查是否有运行中的事件循环
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            # 不在 async 上下文中（如测试环境），跳过调度
-            logger.debug("记忆提取跳过：无运行中的事件循环")
+            logger.info("记忆提取跳过：无运行中的事件循环")
             return
 
         # 取消上一个定时器
@@ -277,18 +279,56 @@ class MemoryStore:
         # 启动新的
         # 保存 messages 的快照（避免后续修改影响）
         messages_snapshot = [dict(m) for m in messages]
+        self._pending_messages = messages_snapshot  # 保存快照，供 flush 用
         self._extraction_timer = asyncio.create_task(
             self._delayed_extract(messages_snapshot)
         )
-        logger.debug("记忆提取已调度，%ds 后执行", _EXTRACTION_DELAY)
+        logger.info("记忆提取已调度，%ds 后执行（消息数=%d）", _EXTRACTION_DELAY, len(messages))
+
+    async def flush_pending_extraction(self) -> int:
+        """立即执行待处理的记忆提取（跳过延迟等待）。
+
+        用于服务关闭时（如 --reload 重启），防止延迟任务被取消而丢失。
+        如果没有 pending 任务则跳过。
+        """
+        # 取消延迟任务
+        if self._extraction_timer and not self._extraction_timer.done():
+            self._extraction_timer.cancel()
+            try:
+                await self._extraction_timer
+            except asyncio.CancelledError:
+                pass
+            self._extraction_timer = None
+
+        # 立即提取
+        if self._pending_messages:
+            messages = self._pending_messages
+            self._pending_messages = None
+            logger.info("记忆提取：立即执行（服务关闭触发，消息数=%d）", len(messages))
+            try:
+                # 加 30 秒超时保护，防止 shutdown 时事件循环即将关闭导致卡死
+                return await asyncio.wait_for(
+                    self._extract_memories(messages),
+                    timeout=30,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("记忆提取：flush 超时（30s），放弃")
+                return 0
+            except Exception as exc:
+                logger.warning("记忆提取：flush 失败: %s", exc, exc_info=True)
+                return 0
+        else:
+            logger.info("记忆提取：无 pending 消息，跳过 flush")
+        return 0
 
     async def _delayed_extract(self, messages: list[dict]) -> None:
         """延迟提取：等待 300 秒，未被取消才真正执行。"""
         try:
             await asyncio.sleep(_EXTRACTION_DELAY)
+            logger.info("记忆提取：延迟到期，开始执行")
             await self._extract_memories(messages)
         except asyncio.CancelledError:
-            logger.debug("记忆提取已取消（用户又发新消息了）")
+            logger.info("记忆提取已取消（用户又发新消息了）")
             raise
 
     async def _extract_memories(self, messages: list[dict]) -> int:
@@ -301,12 +341,13 @@ class MemoryStore:
         try:
             config = RAGConfig.from_settings()
             llm = get_chat_model(config)
-        except Exception:
-            logger.warning("记忆提取失败：LLM 初始化失败")
+        except Exception as exc:
+            logger.warning("记忆提取失败：LLM 初始化失败: %s", exc, exc_info=True)
             return 0
 
         # 格式化对话
         conversation = self._format_conversation(messages)
+        logger.info("记忆提取：开始调用 LLM（对话 %d 字符）", len(conversation))
 
         # 加载已有记忆，让 LLM 避免重复提取
         existing = self.load()
@@ -322,8 +363,10 @@ class MemoryStore:
                 )),
             ])
         except Exception as exc:
-            logger.warning("记忆提取 LLM 调用失败: %s", exc)
+            logger.warning("记忆提取 LLM 调用失败: %s", exc, exc_info=True)
             return 0
+
+        logger.info("记忆提取：LLM 返回 %d 字符", len(str(response.content)))
 
         # 解析 JSON
         new_memories = self._parse_extraction(response.content)

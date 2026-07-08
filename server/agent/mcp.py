@@ -78,17 +78,21 @@ async def load_mcp_tools(mcp_servers: dict) -> list:
     # 转换为 MultiServerMCPClient 需要的格式
     servers = {}
     for name, cfg in mcp_servers.items():
-        transport = cfg.get("transport", "stdio")
-        if transport == "stdio":
+        transport = cfg.get("transport", cfg.get("type", "stdio"))
+        if transport in ("stdio", "local"):
             servers[name] = {
                 "command": cfg["command"],
                 "args": cfg.get("args", []),
                 "transport": "stdio",
             }
-        elif transport == "sse":
+        elif transport in ("sse", "remote", "streamable_http", "http"):
+            # 兼容多种配置格式：
+            #   type: remote / transport: sse → 用 sse
+            #   transport: streamable_http / http → 用 http（streamable HTTP）
+            actual_transport = "http" if transport in ("streamable_http", "http") else "sse"
             servers[name] = {
                 "url": cfg["url"],
-                "transport": "sse",
+                "transport": actual_transport,
             }
 
     # 逐服务器连接：并发的服务器都连，但各自独立容错

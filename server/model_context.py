@@ -226,6 +226,7 @@ def get_model_info_with_overrides(model_ref: str) -> dict:
         return {
             "context_window": o.get("context_window", 0),
             "max_output": o.get("max_output", 0),
+            "has_vision": o.get("has_vision", False),
             "source": "override",
         }
 
@@ -236,10 +237,11 @@ def get_model_info_with_overrides(model_ref: str) -> dict:
         return {
             "context_window": result[0],
             "max_output": result[1],
+            "has_vision": False,
             "source": "builtin",
         }
 
-    return {"context_window": 0, "max_output": 0, "source": "unknown"}
+    return {"context_window": 0, "max_output": 0, "has_vision": False, "source": "unknown"}
 
 
 def get_model_generation_overrides(model_ref: str) -> dict:

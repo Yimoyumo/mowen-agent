@@ -6,6 +6,7 @@ import RetrievalSettings from '@/components/settings/RetrievalSettings.vue'
 import PersonaSettings from '@/components/settings/PersonaSettings.vue'
 import MemorySettings from '@/components/settings/MemorySettings.vue'
 import ProfileSettings from '@/components/settings/ProfileSettings.vue'
+import McpSettings from '@/components/settings/McpSettings.vue'
 import { useRouter } from 'vue-router'
 
 const {
@@ -121,6 +122,10 @@ function doAddProvider(name: string, baseUrl: string, apiKey: string, callback: 
             :saving="saving"
             @save="saveProfile"
           />
+        </el-tab-pane>
+
+        <el-tab-pane label="MCP 服务器" name="mcp">
+          <McpSettings />
         </el-tab-pane>
       </el-tabs>
     </div>

@@ -53,7 +53,23 @@ export function useChat() {
       }))
   }
 
-  async function sendMessage(text?: string, uploadedFiles?: { token: string; filename: string }[]) {
+  /** 把残留的 running 工具标记为已中断 */
+  function _finalizeToolSegments(convId: string, msgId: string, label: string) {
+    const msg = store.currentConversation?.messages.find(m => m.id === msgId)
+    if (!msg?.segments) return
+    const segs = [...msg.segments]
+    let changed = false
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const seg = segs[i]
+      if (seg && seg.type === 'tool' && seg.status === 'running') {
+        segs[i] = { ...seg, type: 'tool', status: 'done', tool: seg.tool, output: `（${label}）` }
+        changed = true
+      }
+    }
+    if (changed) store.updateMessage(convId, msgId, { segments: segs })
+  }
+
+  async function sendMessage(text?: string, uploadedFiles?: { token: string; filename: string; is_image?: boolean }[]) {
     const q = (text ?? question.value).trim()
     if (!q) {
       ElMessage.warning('请输入问题')
@@ -68,7 +84,7 @@ export function useChat() {
     store.setConversationKb(conv.id, kbStore.currentKbId)
 
     // 添加用户消息
-    store.addMessage(conv.id, { role: 'user', content: q })
+    store.addMessage(conv.id, { role: 'user', content: q, files: uploadedFiles?.map(f => ({ filename: f.filename, token: f.token, is_image: f.is_image })) })
 
     loading.value = true
     streaming.value = true
@@ -150,6 +166,21 @@ export function useChat() {
           streaming.value = false
           abortFn.value = null
           if (stats) tokenStats.value = stats
+          // 把残留的 running 工具标记为已中断
+          _finalizeToolSegments(conv.id, assistantMsg.id, '中断')
+          // 流结束后一次性同步到后端
+          const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          if (msg) {
+            import('@/api/conversations').then(mod => {
+              mod.updateMessage(conv.id, msg.id, {
+                content: msg.content,
+                reasoning: msg.reasoning,
+                contexts: msg.contexts,
+                segments: msg.segments,
+                files: msg.files,
+              }).catch(() => {})
+            })
+          }
         },
         onError: (msg) => {
           if (abortCalled) return
@@ -162,6 +193,19 @@ export function useChat() {
             content: (current?.content ?? '') + errorMsg,
           })
           ElMessage.error(msg)
+          // 把残留的 running 工具标记为已中断
+          _finalizeToolSegments(conv.id, assistantMsg.id, '中断')
+          // 同步错误状态到后端
+          const msg2 = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
+          if (msg2) {
+            import('@/api/conversations').then(mod => {
+              mod.updateMessage(conv.id, msg2.id, {
+                content: msg2.content,
+                reasoning: msg2.reasoning,
+                segments: msg2.segments,
+              }).catch(() => {})
+            })
+          }
         },
       },
       {

@@ -23,23 +23,25 @@ _UPLOADS_DIR = Path("uploads")
 _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # 上传文件大小限制：50MB
-_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+_MAX_UPLOAD_SIZE = 200 * 1024 * 1024  # 200MB
 
 # 允许上传的文件扩展名（白名单）
 _ALLOWED_EXTS = {
     # 文档
-    '.txt', '.md', '.json', '.csv', '.pdf', '.docx', '.xlsx',
+    '.txt', '.md', '.json', '.csv', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
     # 代码
     '.py', '.js', '.ts', '.java', '.go', '.rs', '.c', '.cpp', '.h', '.sh', '.sql',
     '.yaml', '.yml', '.toml', '.ini', '.xml', '.html', '.css',
     # 图片
     '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp',
     # 压缩包
-    '.zip', '.tar', '.gz', '.tgz', '.bz2', '.7z',
+    '.zip', '.tar', '.gz', '.tgz', '.bz2', '.7z', '.rar',
 }
 
+_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'}
+
 # 图片扩展名 → 浏览器内联显示（而非下载）
-_INLINE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.txt', '.csv', '.json', '.md'}
+_INLINE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.txt', '.csv', '.json', '.md'}
 
 
 def _sanitize_filename(filename: str | None) -> str:
@@ -74,6 +76,8 @@ async def upload_file(file: UploadFile = File(...)) -> dict:
 
     logger.info("上传文件: %s", safe_filename)
 
+    is_image = suffix in _IMAGE_EXTS
+
     token = str(uuid.uuid4())[:8]
     dest_dir = _UPLOADS_DIR / token
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -95,6 +99,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict:
         "token": token,
         "filename": safe_filename,
         "size": total_size,
+        "is_image": is_image,
     }
 
 
@@ -132,4 +137,28 @@ def download_file(token: str, filename: str) -> FileResponse:
         path=str(file_path),
         filename=safe_filename,
         media_type="application/octet-stream",
+    )
+
+
+@router.get("/uploads/{token}/{filename}")
+def serve_uploaded_file(token: str, filename: str) -> FileResponse:
+    """提供用户上传的文件（用于前端 <img> 标签显示缩略图）。
+
+    URL 格式: /api/uploads/{token}/{filename}
+    """
+    safe_filename = Path(filename).name
+    file_path = _UPLOADS_DIR / token / safe_filename
+
+    # 安全检查：防止路径穿越
+    if not file_path.resolve().is_relative_to(_UPLOADS_DIR.resolve()):
+        raise ForbiddenError("非法路径")
+
+    if not file_path.is_file():
+        raise NotFoundError("文件不存在或已过期")
+
+    media_type = mimetypes.guess_type(safe_filename)[0] or "application/octet-stream"
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_filename,
+        media_type=media_type,
     )

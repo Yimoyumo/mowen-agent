@@ -45,6 +45,31 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     collection_name TEXT NOT NULL,
     created_at      TEXT NOT NULL
 );
+
+-- 对话会话
+CREATE TABLE IF NOT EXISTS conversations (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL DEFAULT '新对话',
+    kb_id       TEXT,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+-- 对话消息
+CREATE TABLE IF NOT EXISTS messages (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    role            TEXT NOT NULL,          -- user / assistant
+    content         TEXT NOT NULL DEFAULT '',
+    reasoning       TEXT DEFAULT '',
+    contexts        TEXT DEFAULT '[]',      -- JSON array
+    segments        TEXT DEFAULT '[]',      -- JSON array
+    files           TEXT DEFAULT '[]',      -- JSON array
+    created_at      INTEGER NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 """
 
 

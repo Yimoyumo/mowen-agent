@@ -79,6 +79,7 @@ class ConfigResponse(BaseModel):
     enable_query_expansion: bool    # 是否开启查询扩写
     context_window: int = 0         # 当前模型的上下文窗口大小（token）
     max_output: int = 0             # 当前模型的最大输出 token 数
+    has_vision: bool = False        # 当前模型是否支持视觉（多模态）
     temperature: float = 0.5        # 生成温度
     max_tokens: int | None = None   # 最大输出 token 数（generation）
     thinking: bool = True           # 是否开启思考模式

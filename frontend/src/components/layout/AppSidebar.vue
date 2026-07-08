@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Conversation } from '@/types/api'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import ChatHistoryPanel from './ChatHistoryPanel.vue'
+import { getExtensions, testMcpServers, type ExtensionsInfo, type McpTestResult } from '@/api/settingsApi'
 
 interface Props {
   creating: boolean
@@ -29,6 +31,9 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const extensions = ref<ExtensionsInfo | null>(null)
+const mcpStatus = ref<Record<string, McpTestResult>>({})
+const testingMcp = ref(false)
 
 function handleCreate(name: string, description: string, kbType: string) {
   emit('create-kb', name, description, kbType)
@@ -37,6 +42,29 @@ function handleCreate(name: string, description: string, kbType: string) {
 function goSettings() {
   router.push('/settings')
 }
+
+async function loadExtensions() {
+  try {
+    extensions.value = await getExtensions()
+    // 加载完配置后立即测试连接状态
+    await testMcpStatus()
+  } catch {
+    // 静默
+  }
+}
+
+async function testMcpStatus() {
+  testingMcp.value = true
+  try {
+    mcpStatus.value = await testMcpServers()
+  } catch {
+    // 静默
+  } finally {
+    testingMcp.value = false
+  }
+}
+
+onMounted(loadExtensions)
 </script>
 
 <template>
@@ -81,6 +109,32 @@ function goSettings() {
           @new-conversation="emit('new-conversation')"
         />
       </el-card>
+    </div>
+
+    <div v-if="!collapsed && extensions && extensions.mcp_servers.length > 0" class="extensions-info">
+      <div class="ext-group">
+        <div class="ext-title">
+          <el-icon><Connection /></el-icon>
+          <span>MCP 服务器 ({{ extensions.mcp_servers.length }})</span>
+          <button class="ext-refresh" :disabled="testingMcp" @click="testMcpStatus" title="测试连接">
+            <el-icon :class="{ spinning: testingMcp }"><Refresh /></el-icon>
+          </button>
+        </div>
+        <div v-for="mcp in extensions.mcp_servers" :key="mcp.name" class="ext-item" :title="mcpStatus[mcp.name]?.error || `${mcp.command} ${mcp.args.join(' ')}`">
+          <span
+            class="ext-dot"
+            :class="{
+              active: mcpStatus[mcp.name]?.ok === true,
+              inactive: mcpStatus[mcp.name]?.ok === false,
+              pending: mcpStatus[mcp.name] === undefined && !testingMcp
+            }"
+          ></span>
+          <span class="ext-name">{{ mcp.name }}</span>
+          <span class="ext-tag" v-if="mcpStatus[mcp.name]?.ok">{{ mcpStatus[mcp.name].tool_count }} 工具</span>
+          <span class="ext-tag err" v-else-if="mcpStatus[mcp.name]?.ok === false">不可用</span>
+          <span class="ext-tag" v-else>{{ mcp.transport }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="sidebar-footer">
@@ -200,6 +254,118 @@ function goSettings() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.extensions-info {
+  padding: 8px 4px 12px;
+  margin-bottom: 8px;
+  border-top: 1px solid #f0f0f0;
+  max-height: 200px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.ext-group {
+  margin-bottom: 8px;
+}
+
+.ext-group:last-child {
+  margin-bottom: 0;
+}
+
+.ext-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #909399;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ext-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #606266;
+}
+
+.ext-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ext-dot.active {
+  background: #67c23a;
+}
+
+.ext-dot.inactive {
+  background: #f56c6c;
+}
+
+.ext-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ext-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f0f0f0;
+  color: #909399;
+}
+
+.ext-warn {
+  color: #e6a23c;
+  font-size: 12px;
+}
+
+.ext-dot.pending {
+  background: #c0c4cc;
+}
+
+.ext-tag.err {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.ext-refresh {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  color: #909399;
+  display: flex;
+  align-items: center;
+}
+
+.ext-refresh:hover {
+  color: #409eff;
+}
+
+.ext-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ext-refresh .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .sidebar-footer {

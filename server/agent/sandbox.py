@@ -109,40 +109,30 @@ class Sandbox:
 
     def write_file(self, path: str, content: str) -> None:
         """在沙盒中创建/覆盖文件。"""
-        # 用 shell heredoc 写入文件
         safe_content = content.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`")
-        cmd = f"cat > {_safe_path(path)} << 'SANDBOX_EOF'\n{safe_content}\nSANDBOX_EOF"
+        cmd = f"cat > {_resolve_path(path)} << 'SANDBOX_EOF'\n{safe_content}\nSANDBOX_EOF"
         self.exec(cmd)
 
     def read_file(self, path: str) -> str:
         """读取沙盒中的文件内容。"""
-        exit_code, output = self.exec(f"cat {_safe_path(path)}")
+        exit_code, output = self.exec(f"cat {_resolve_path(path)}")
         if exit_code != 0:
             return f"（文件不存在或无法读取: {path}）"
         return output
 
     def list_dir(self, path: str = "/workspace") -> str:
         """列出目录内容（ls -lah）。"""
-        exit_code, output = self.exec(f"ls -lah {_safe_path(path)}")
+        exit_code, output = self.exec(f"ls -lah {_resolve_path(path)}")
         if exit_code != 0:
             return f"（目录不存在或无法列出: {path}）"
         return output
 
     def export_file(self, container_path: str) -> tuple[str, str] | None:
-        """将容器内文件导出到宿主机 downloads 目录。
-
-        Args:
-            container_path: 容器内文件路径
-
-        Returns:
-            (download_token, filename) 元组，供构造下载 URL
-            失败返回 None
-        """
-        safe = _safe_path(container_path)
-        # 确保目标目录存在
+        """将容器内文件导出到宿主机 downloads 目录。"""
+        resolved = _resolve_path(container_path)
         _DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-        filename = Path(safe).name
+        filename = Path(resolved).name
         token = str(uuid.uuid4())[:8]
         dest_dir = _DOWNLOADS_DIR / token
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -150,7 +140,7 @@ class Sandbox:
 
         try:
             cp_result = subprocess.run(
-                ["docker", "cp", f"{self._container.id}:{safe}", str(dest_path)],
+                ["docker", "cp", f"{self._container.id}:{resolved}", str(dest_path)],
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -162,21 +152,13 @@ class Sandbox:
             return None
 
     def import_file(self, host_path: str, container_subpath: str | None = None) -> str | None:
-        """将宿主机文件导入沙盒容器。
-
-        Args:
-            host_path: 宿主机上的文件绝对路径
-            container_subpath: 容器内的目标路径（相对于 /workspace），默认用原文件名
-
-        Returns:
-            容器内的文件路径，失败返回 None
-        """
+        """将宿主机文件导入沙盒容器。"""
         src = Path(host_path)
         if not src.is_file():
             return None
 
         filename = container_subpath or src.name
-        dest = _safe_path(f"/workspace/{filename}")
+        dest = _resolve_path(f"/workspace/{filename}")
 
         try:
             cp_result = subprocess.run(
@@ -187,7 +169,7 @@ class Sandbox:
             )
             if cp_result.returncode != 0:
                 return None
-            return f"/workspace/{Path(dest).name}"
+            return dest
         except Exception:
             return None
 
@@ -205,28 +187,63 @@ class Sandbox:
 _sandbox_pool: dict[str, dict] = {}
 _pool_lock = threading.Lock()
 
+# 记录每个 session 上传过的文件，沙盒重建时自动重新导入
+_session_files: dict[str, list[dict]] = {}
+_session_files_lock = threading.Lock()
+
+
+def track_session_files(session_id: str, files: list[dict]) -> None:
+    """记录某个 session 上传的文件列表。
+
+    Args:
+        files: [{token, filename}, ...]
+    """
+    if not session_id or not files:
+        return
+    with _session_files_lock:
+        _session_files[session_id] = [dict(f) for f in files]
+
+
+def _reimport_files(sb: Sandbox, files: list[dict]) -> list[dict]:
+    """将宿主机文件重新导入沙盒。
+
+    源文件缺失或过期时静默跳过。
+
+    Returns:
+        成功导入的文件列表（失败的从 tracking 中移除）
+    """
+    ok = []
+    for f in files:
+        host_path = Path(f"uploads/{f['token']}/{f['filename']}")
+        suffix = Path(f.get("filename", "")).suffix.lower()
+        if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
+            continue
+        if not host_path.is_file():
+            logger.debug("沙盒文件恢复跳过: 源文件已过期 %s", f['filename'])
+            continue
+        if sb.import_file(str(host_path)):
+            ok.append(f)
+    return ok
+
 
 def get_or_create(session_id: str) -> Sandbox:
     """获取或创建沙盒（按 session_id）。
 
     如果池中已有该会话的沙盒且容器存活，直接复用；
-    否则创建新沙盒并存入池中。
+    否则创建新沙盒并存入池中，同时自动重新导入已上传的文件。
     """
     with _pool_lock:
         entry = _sandbox_pool.get(session_id)
         if entry:
-            # 检查容器是否还活着
             try:
                 entry["sandbox"]._container.reload()
                 entry["last_active"] = time.time()
                 logger.debug("沙盒复用: session=%s", session_id)
                 return entry["sandbox"]
             except Exception:
-                # 容器已死，清理后重建
                 logger.info("沙盒容器已失效，重建: session=%s", session_id)
                 del _sandbox_pool[session_id]
 
-        # 沙盒池已满，淘汰最久未用的
         if len(_sandbox_pool) >= _MAX_SANDBOXES:
             oldest_id = min(_sandbox_pool, key=lambda k: _sandbox_pool[k]["last_active"])
             old = _sandbox_pool.pop(oldest_id)
@@ -236,13 +253,27 @@ def get_or_create(session_id: str) -> Sandbox:
                 pass
             logger.warning("沙盒池已满，淘汰: session=%s", oldest_id)
 
-        # 创建新沙盒
         sb = Sandbox()
         _sandbox_pool[session_id] = {
             "sandbox": sb,
             "last_active": time.time(),
         }
         logger.info("沙盒已创建: session=%s container=%s", session_id, sb.container_id)
+
+        # 自动重新导入之前上传的文件
+        with _session_files_lock:
+            files = _session_files.get(session_id, [])
+        if files:
+            remaining = _reimport_files(sb, files)
+            # 部分文件已过期，更新 tracking
+            with _session_files_lock:
+                if remaining:
+                    _session_files[session_id] = remaining
+                else:
+                    _session_files.pop(session_id, None)
+            logger.info("沙盒文件已恢复: session=%s 成功=%d/%d",
+                       session_id, len(remaining), len(files))
+
         return sb
 
 
@@ -349,13 +380,15 @@ def _quote(command: str) -> str:
     return f"'{escaped}'"
 
 
-def _safe_path(path: str) -> str:
-    """防止路径穿越，将路径约束在 /workspace 内。"""
+def _resolve_path(path: str) -> str:
+    """将相对路径转为基于 /workspace 的绝对路径。
+
+    不做硬性约束，只做补全：
+    - 相对路径如 "test.py" → "/workspace/test.py"
+    - 绝对路径如 "/etc/hosts" 原样返回
+    - 路径穿越（..）由 Docker 容器自身的 chroot 效果兜底
+    """
     p = Path(path)
     if not p.is_absolute():
         p = Path("/workspace") / p
-    # 解析 .. 并确保在 /workspace 内
-    resolved = p.resolve()
-    if str(resolved).startswith("/workspace"):
-        return str(resolved)
-    return "/workspace/" + resolved.name
+    return str(p)

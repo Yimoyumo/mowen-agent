@@ -9,6 +9,7 @@ export interface ChatMessage {
   reasoning?: string           // 模型推理过程
   contexts?: string[]
   segments?: MessageSegment[]  // 交错文本和工具调用片段
+  files?: { filename: string; token: string; is_image?: boolean }[]  // 用户上传的文件列表
   createdAt: number
 }
 
@@ -30,7 +31,7 @@ export interface ChatRequest {
   kb_id?: string | null
   stream?: boolean             // 是否流式输出，默认 true
   show_reasoning?: boolean     // 是否返回推理过程，默认 false
-  uploaded_files?: { token: string; filename: string }[]  // 上传的文件
+  uploaded_files?: { token: string; filename: string; is_image?: boolean }[]  // 上传的文件
   session_id?: string | null   // 会话 ID，用于沙盒跨消息持久化
 }
 
@@ -90,6 +91,7 @@ export interface ConfigResponse {
   enable_query_expansion: boolean
   context_window: number
   max_output: number
+  has_vision: boolean
   temperature: number
   max_tokens: number | null
   thinking: boolean

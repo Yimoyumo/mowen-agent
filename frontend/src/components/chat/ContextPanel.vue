@@ -202,15 +202,33 @@ const emit = defineEmits<{
 .markdown-body :deep(pre) {
   margin: 0 0 8px;
   padding: 12px;
+  padding-top: 28px;
   border-radius: 6px;
-  background: #1d1d1d;
+  background: #f6f8fa;
+  border: 1px solid #e1e4e8;
   overflow-x: auto;
+  position: relative;
+}
+
+.markdown-body :deep(pre)::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 8px;
+  font-size: 0.7em;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  color: #6a737d;
+  background: #eef1f4;
+  border-left: 1px solid #e1e4e8;
+  border-bottom: 1px solid #e1e4e8;
+  border-radius: 0 6px 0 6px;
+  text-transform: uppercase;
 }
 
 .markdown-body :deep(pre code) {
   padding: 0;
   background: transparent;
-  color: #f8f8f2;
 }
 
 .markdown-body :deep(blockquote) {

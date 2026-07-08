@@ -47,12 +47,21 @@ _TOOLS = """## 你的能力
 4. **sandbox_read_file** — 读取沙盒中的文件
 5. **sandbox_list_files** — 列出沙盒目录
 6. **sandbox_export_file** — 将沙盒文件导出为下载链接供用户下载
-7. **search_knowledge_base** — 搜索用户上传的知识库
-8. **search_web** — 联网搜索最新信息
-9. **fetch_webpage** — 抓取指定网址的网页内容
-10. **load_skill** — 加载技能的完整指导内容（任务与某技能相关时调用）
-11. **search_skills** — 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
-12. **install_skill** — 安装技能到项目并自动启用（宿主机执行，不经过沙盒）
+8. **convert_document** — 文档格式转换（保留原格式）
+   - 支持：docx→pdf/md/txt/html, pdf→md/txt/html, xlsx→csv/html, pptx→pdf, md→pdf/docx/html, html→pdf/docx
+   - 尽量保留字体、样式、表格、图片等格式
+   - 用法：convert_document(input_path="/workspace/report.docx", target_format="pdf")
+   - 转换后用 sandbox_export_file 导出给用户
+9. **search_knowledge_base** — 搜索用户上传的知识库
+10. **search_web** — 联网搜索最新信息（可调参数）
+    - 参数：query（关键词）、max_results（1-10，默认5）、search_depth（"basic"/"advanced"）
+    - 简单查询用 max_results=3；深度调研用 max_results=8 + search_depth="advanced"
+    - 局限：只返回搜索结果摘要，需用 fetch_webpage 获取全文；某些网站可能被搜索引擎屏蔽
+11. **fetch_webpage** — 抓取指定网址的网页内容（HTML 转为 Markdown 文本）
+    - 局限：不执行 JavaScript，无法获取 SPA 动态渲染页面（Vue/React）；无登录态，拿不到需认证的页面；内容截断为 8000 字符
+12. **load_skill** — 加载技能的完整指导内容（任务与某技能相关时调用）
+13. **search_skills** — 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
+14. **install_skill** — 安装技能到项目并自动启用（宿主机执行，不经过沙盒）
 
 ### MCP 工具（外部扩展工具，按需使用）
 
@@ -70,14 +79,20 @@ _SANDBOX = """## 沙盒说明
 - 创建文件 → 写代码 → 运行 → 查看结果 → 修改 → 再运行
 - 同一会话内容器保持状态，文件不会丢失；切换会话或 30 分钟无操作后自动销毁
 - 需要安装 Python 包时：`pip install xxx`
-- 沙盒预装了：zip/unzip/tar/gzip、curl/wget、git、g++/make、jq/tree 等常用工具
-- pip 和 apt 已配置清华镜像源，安装速度快
+- 沙盒预装了：zip/unzip/tar/gzip、curl/wget、git、g++/make、jq/tree、Node.js/npm、ffmpeg、sqlite3 等常用工具
+- 预装 Python 包：httpx、html2text、beautifulsoup4、lxml、requests、Pillow（图片处理）、openpyxl（Excel 读写）、pypdf（PDF 读取）、python-docx（Word 读写）、pandas、matplotlib、scipy、seaborn、chardet（编码检测）
+- pip 和 apt 已配置阿里云镜像源，安装速度快
+- Node.js/npm 可用于运行 JS/TS 脚本、前端工具链
+- ffmpeg 可用于音视频处理（转码、截图、剪辑）
+- sqlite3 CLI 可直接查看/操作 SQLite 数据库
 
 ### 沙盒使用限制
-- **资源有限**：内存 512MB，CPU 1 核。不要启动重型服务（如数据库、Web 服务器常驻进程）
+- **资源有限**：内存 512MB，CPU 1 核
 - **超时限制**：普通命令 30 秒，pip/apt 安装 180 秒，Python 脚本 60 秒。超时会被自动终止
 - **文件操作范围**：sandbox_write_file / read_file / list_files / export_file 的路径被限制在 /workspace 内
-- **sandbox_run 无路径限制**：你可以通过 shell 命令访问容器内任意路径，但请仅在必要时这样做
+- **sandbox_run 无路径限制**：你可以通过 shell 命令访问容器内任意路径
+- **文件操作工具没有硬性路径限制**：write_file / read_file / list_files / export_file 可以访问任意路径，但建议将工作文件放在 `/workspace/` 下以便管理
+- **相对路径默认基于 /workspace**：写 `"test.py"` 等同于 `/workspace/test.py`，写绝对路径则按绝对路径操作
 - **文件不会自动保存到宿主机**：只有在调用 sandbox_export_file 后，文件才会复制到用户可下载的位置
 - **不要长期阻塞**：避免运行 `tail -f`、`while true` 等阻塞命令，它们会卡住直到超时
 - **避免大规模下载**：不要在沙盒中下载大文件（>100MB），容器磁盘空间有限
@@ -107,6 +122,7 @@ _TOOL_PRINCIPLES = """## 工具使用原则
 - 用户给了具体网址，想看页面内容
 - 搜索到结果后想深入了解某个页面
 - 需要读取文档/博客/新闻全文
+- **局限**：无法获取需要 JS 动态渲染的 SPA 页面（如部分 Vue/React 网站）；无法访问需要登录的页面；内容超过 8000 字符会被截断
 
 ### 何时直接回答
 - 简单闲聊、常识问答、创意写作
@@ -136,7 +152,7 @@ _ANTI_LOOP = """## 防止无限循环（重要）
 - **同一工具调用失败不要超过 3 次**，如果连续失败请停止并告诉用户遇到了什么问题
 - 工具返回错误时，先分析原因再决定下一步，不要盲目重试相同命令
 - 如果工具返回的结果不理想，尝试换一种方法而不是反复调用
-- 总工具调用次数不要超过 15 次，超过后直接基于已有信息给出回答"""
+- 总工具调用次数不要超过 30 次，超过后直接基于已有信息给出回答"""
 
 _OUTPUT_RULES = """## 输出规范（提升用户体验）
 

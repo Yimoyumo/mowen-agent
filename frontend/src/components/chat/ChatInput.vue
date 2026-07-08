@@ -14,11 +14,13 @@ interface Props {
   currentKbId: string | null
   modelOptions?: string[]
   activeModel?: string
+  modelVisionMap?: Record<string, boolean>
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelOptions: () => [],
   activeModel: '',
+  modelVisionMap: () => ({}),
 })
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -65,8 +67,17 @@ function modelLabel(m: string): string {
 }
 
 // 文件上传
-const uploadedFiles = ref<{ token: string; filename: string; size: number }[]>([])
+const uploadedFiles = ref<{ token: string; filename: string; size: number; is_image: boolean }[]>([])
 const uploading = ref(false)
+
+async function uploadOneFile(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await apiClient.post('/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  uploadedFiles.value.push(res.data)
+}
 
 async function handleFileChange(e: Event) {
   const input = e.target as HTMLInputElement
@@ -75,23 +86,37 @@ async function handleFileChange(e: Event) {
 
   uploading.value = true
   for (const file of Array.from(files)) {
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await apiClient.post('/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      uploadedFiles.value.push(res.data)
-    } catch {
-      // ignore upload errors silently
-    }
+    try { await uploadOneFile(file) } catch { /* ignore */ }
   }
   uploading.value = false
   input.value = ''  // reset so same file can be re-uploaded
 }
 
-function removeFile(index: number) {
-  uploadedFiles.value.splice(index, 1)
+async function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    // 剪贴板中的图片
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()  // 阻止默认粘贴行为（避免粘贴图片二进制乱码）
+      const file = item.getAsFile()
+      if (!file) continue
+      // 如果没文件名，生成一个
+      if (!file.name || file.name === 'image.png') {
+        const ext = item.type.split('/')[1] || 'png'
+        const renamed = new File([file], `paste_${Date.now()}.${ext}`, { type: item.type })
+        uploading.value = true
+        try { await uploadOneFile(renamed) } catch { /* ignore */ }
+        uploading.value = false
+      } else {
+        uploading.value = true
+        try { await uploadOneFile(file) } catch { /* ignore */ }
+        uploading.value = false
+      }
+    }
+  }
 }
 
 function handleInput(e: Event) {
@@ -157,7 +182,10 @@ async function doSend() {
         :key="f.token"
         class="file-chip"
       >
-        <el-icon><Document /></el-icon>
+        <template v-if="f.is_image">
+          <img :src="`/api/uploads/${f.token}/${f.filename}`" class="file-chip-thumb" />
+        </template>
+        <el-icon v-else><Document /></el-icon>
         <span class="file-name">{{ f.filename }}</span>
         <span class="file-size">({{ (f.size / 1024).toFixed(0) }}KB)</span>
         <button class="file-remove" @click="removeFile(i)">×</button>
@@ -173,6 +201,7 @@ async function doSend() {
         :disabled="disabled"
         @input="handleInput"
         @keydown="handleKeydown"
+        @paste="handlePaste"
       />
       <div class="char-counter" :class="{ over: isOverLimit }">
         {{ charCount }} / {{ MAX_CHARS }}{{ isOverLimit ? ' · 超出部分将转文件发送' : '' }}
@@ -196,6 +225,7 @@ async function doSend() {
           >
             <template #label>
               <span class="model-label-text">{{ activeModel.split('/').pop() || activeModel }}</span>
+              <el-tag v-if="modelVisionMap[activeModel]" size="small" type="success" class="vision-badge">👁️</el-tag>
               <span v-if="modelCtx.context_window > 0" class="model-ctx-badge">
                 {{ fmtTokens(modelCtx.context_window) }}
               </span>
@@ -205,7 +235,10 @@ async function doSend() {
               :key="m"
               :label="m"
               :value="m"
-            />
+            >
+              <span>{{ m }}</span>
+              <el-tag v-if="modelVisionMap[m]" size="small" type="success" class="vision-tag">👁️ 视觉</el-tag>
+            </el-option>
           </el-select>
 
           <!-- 知识库选择 -->
@@ -251,7 +284,7 @@ async function doSend() {
       </div>
     </div>
     <div class="input-footer">
-      <span class="input-tip">Enter 发送 · Shift + Enter 换行{{ currentKbId ? ' · RAG 增强' : '' }}</span>
+      <span class="input-tip">Enter 发送 · Shift+Enter 换行 · Ctrl+V 粘贴图片{{ currentKbId ? ' · RAG 增强' : '' }}</span>
     </div>
   </div>
 </template>
@@ -283,6 +316,14 @@ async function doSend() {
   border-radius: 6px;
   font-size: 12px;
   color: #1d1d1d;
+}
+
+.file-chip-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .file-chip .file-name {
@@ -418,6 +459,16 @@ async function doSend() {
   border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.vision-badge {
+  font-size: 11px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+}
+
+.vision-tag {
+  margin-left: 6px;
 }
 
 .ctx-info {
