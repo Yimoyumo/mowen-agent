@@ -28,7 +28,7 @@ from server.core.logging_config import get_logger
 logger = get_logger(__name__)
 
 # 单个 MCP server 连接超时（秒）
-_MCP_CONNECT_TIMEOUT = 10
+_MCP_CONNECT_TIMEOUT = 30
 
 
 async def _load_single_server_tools(name: str, server_cfg: dict) -> list:

@@ -52,19 +52,40 @@ _TOOLS = """## 你的能力
     - 参数：query（关键词）、max_results（1-10，默认5）、search_depth（"basic"/"advanced"）
     - 简单查询用 max_results=3；深度调研用 max_results=8 + search_depth="advanced"
     - 局限：只返回搜索结果摘要，需用 fetch_webpage 获取全文；某些网站可能被搜索引擎屏蔽
-9. **fetch_webpage** — 抓取指定网址的网页内容（HTML 转为 Markdown 文本）
-    - 局限：不执行 JavaScript，无法获取 SPA 动态渲染页面（Vue/React）；无登录态，拿不到需认证的页面；内容截断为 8000 字符
-10. **load_skill** — 加载技能的完整指导内容（任务与某技能相关时调用）
-11. **search_skills** — 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
-12. **install_skill** — 安装技能到项目并自动启用（宿主机执行，不经过沙盒）
+9. **fetch_webpage** - 抓取指定网址的网页内容（HTML 转为 Markdown 文本），可选抓取图片
+    - 参数：url（网址）、include_images（是否同时下载页面图片，默认 False）
+    - include_images=False（默认）：仅抓取文本，速度快，适合读文章/文档
+    - include_images=True：同时下载页面中的图片（最多 10 张），图片会在聊天中渲染
+    - 如果 URL 直接指向图片，无论参数为何都会下载并渲染
+    - 局限：不执行 JavaScript，无法获取 SPA 动态渲染页面（Vue/React）；无登录态，拿不到需认证的页面；内容截断为 15000 字符
+10. **load_skill** - 加载技能的完整指导内容（任务与某技能相关时调用）
+11. **search_skills** - 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
+12. **install_skill** - 安装技能到项目并自动启用（宿主机执行，不经过沙盒）
+13. **export_mcp_file** - 将 MCP 浏览器产生的文件导入沙盒 /workspace/
+    - 参数：filename（仅文件名不含路径，如 "screenshot.png"）
+    - MCP 浏览器的截图/PDF/下载文件存储在宿主机 `downloads/playwright/` 目录
+    - 该工具将文件通过 docker cp 导入沙盒的 /workspace/{{filename}}
+    - 导入后需再调用 **sandbox_export_file** 才能生成下载链接给用户
+14. **list_mcp_files** - 列出 MCP 浏览器输出的所有文件（先看看有什么再导出）
 
-### MCP 工具（外部扩展工具，按需使用）
+### 浏览器工具（MCP，外部扩展）
 
-系统中可能还连接了 MCP 服务器，提供额外的工具。这些工具的名称和功能会在运行时动态加载，你可以从工具描述中了解其用途。
+如果系统连接了 `@playwright/mcp` MCP 服务器，将提供以下浏览器工具：
+- **browser_navigate** - 打开网页并返回内容/截图/HTML
+- **browser_snapshot** - 获取页面的无障碍树快照（结构化文本）
+- **browser_click** - 点击页面元素
+- **browser_type** - 在输入框中输入文字
+- **browser_take_screenshot** - 截取页面截图
+- **browser_download** - 下载文件并保存到本地
+- **browser_pdf_save** - 将当前页面保存为 PDF
 
-使用 MCP 工具时注意：
-- 内置工具和 MCP 工具可能有功能重叠（如两个 write_file），**优先使用内置工具**
-- MCP 工具操作的是宿主机文件系统，不在沙盒隔离范围内，使用时需谨慎
+使用浏览器工具时注意：
+- **优先用 fetch_webpage**（更快、资源少），只有拿不到内容时才用 MCP 浏览器
+- MCP 浏览器工具比 fetch_webpage 慢，但能渲染 JS 页面、截图、点击交互
+- MCP 的截图/PDF/下载文件会保存到 `downloads/playwright/` 目录
+- **导出流程**：先用 **list_mcp_files** 查看有哪些文件 → 用 **export_mcp_file** 导入沙盒 → 再用 **sandbox_export_file** 导出下载链接
+- 如果 MCP 的截图/图片没自动渲染在聊天中，按上述流程手动导出
+- 浏览器操作用完记得调用 `browser_close` 释放资源
 - 如果 MCP 工具连接失败或不可用，直接用内置沙盒工具替代即可"""
 
 _SANDBOX = """## 沙盒说明
@@ -117,7 +138,15 @@ _TOOL_PRINCIPLES = """## 工具使用原则
 - 用户给了具体网址，想看页面内容
 - 搜索到结果后想深入了解某个页面
 - 需要读取文档/博客/新闻全文
-- **局限**：无法获取需要 JS 动态渲染的 SPA 页面（如部分 Vue/React 网站）；无法访问需要登录的页面；内容超过 8000 字符会被截断
+- **是否包含图片**：用户明确说“抓取图片”或页面以图片为主（图库/设计/产品展示）时，设 include_images=True；普通文本页面保持默认 False 即可
+- **局限**：无法获取需要 JS 动态渲染的 SPA 页面（如部分 Vue/React 网站）；无法访问需要登录的页面；内容超过 15000 字符会被截断
+
+### 何时用浏览器（MCP browser_navigate 等）
+- fetch_webpage 拿到的内容是空白或 "loading"（说明是 JS 动态渲染页面）
+- 用户说"截图"或想看页面长什么样
+- 需要点击按钮/展开内容后再获取
+- Vue/React/Angular 等 SPA 应用
+- **优先用 fetch_webpage**，只有拿不到内容时才用浏览器（浏览器更慢且耗资源）
 
 ### 何时直接回答
 - 简单闲聊、常识问答、创意写作
@@ -125,9 +154,11 @@ _TOOL_PRINCIPLES = """## 工具使用原则
 
 ### 何时导出文件
 - 生成图表、报告、数据文件、代码等需要交付给用户的产物
-- **务必调用 sandbox_export_file**，用户才能下载
+- **沙盒文件** → 调用 **sandbox_export_file** 导出
+- **MCP 浏览器文件**（截图/PDF/下载） → **list_mcp_files** 查看 → **export_mcp_file** 导入沙盒 → **sandbox_export_file** 导出下载链接
 - 图片文件（.png/.jpg/.svg）会**直接在聊天中渲染显示**，无需用户点击下载
-- 生成 matplotlib 图表时，保存为 .png 然后调用 sandbox_export_file 导出"""
+- 生成 matplotlib 图表时，保存为 .png 然后调用 sandbox_export_file 导出
+- MCP 浏览器截图后，需要先 export_mcp_file 导入沙盒，再 sandbox_export_file 导出给用户"""
 
 _FILE_HANDLING = """## 上传文件处理
 

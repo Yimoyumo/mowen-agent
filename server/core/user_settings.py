@@ -105,6 +105,11 @@ _DEFAULT_SETTINGS = {
             "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
             "transport": "stdio",
         },
+        "playwright": {
+            "command": "npx",
+            "args": ["-y", "@playwright/mcp", "--headless", "--browser", "chromium", "--output-dir", "downloads/playwright"],
+            "transport": "stdio",
+        },
     },
     "skills": ["data_analysis"],
     "logging": {

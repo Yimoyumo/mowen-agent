@@ -149,8 +149,10 @@ export interface UserSettings {
     query_expansion: boolean | null
   }
   generation: {
-    temperature: number | null
-    max_tokens: number | null
+    temperature?: number | null
+    max_tokens?: number | null
+    thinking?: boolean
+    reasoning_effort?: string | null
   }
   persona: {
     enabled: boolean
@@ -161,6 +163,7 @@ export interface UserSettings {
     interests: string
     preferences: string
   }
+  mcp_servers?: Record<string, unknown>
   updated_at: string | null
 }
 
@@ -210,4 +213,31 @@ export interface MemoryItem {
 export interface MemoryResponse {
   memories: MemoryItem[]
   total: number
+}
+
+// ==================== 定时任务类型 ====================
+
+export type ScheduleType = 'cron' | 'interval' | 'once'
+export type TaskStatus = 'active' | 'paused' | 'completed' | 'error'
+
+export interface ScheduleConfig {
+  expression?: string      // cron: "0 9 * * *"
+  seconds?: number          // interval: 3600
+  datetime?: string        // once: "2024-12-25T09:00:00"
+}
+
+export interface ScheduledTask {
+  id: string
+  name: string
+  prompt: string
+  schedule_type: ScheduleType
+  schedule_config: ScheduleConfig
+  kb_id?: string | null
+  status: TaskStatus
+  last_run_at: number | null
+  next_run_at: number | null
+  last_result: string
+  run_count: number
+  created_at: number
+  updated_at: number
 }

@@ -28,6 +28,7 @@ const emit = defineEmits<{
   stop: []
   selectKb: [kbId: string]
   selectModel: [modelRef: string]
+  removeFile: [index: number]
 }>()
 
 const charCount = computed(() => props.modelValue.length)
@@ -98,6 +99,7 @@ async function handlePaste(e: ClipboardEvent) {
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
+    if (!item) continue
     // 剪贴板中的图片
     if (item.type.startsWith('image/')) {
       e.preventDefault()  // 阻止默认粘贴行为（避免粘贴图片二进制乱码）
@@ -121,6 +123,10 @@ async function handlePaste(e: ClipboardEvent) {
 
 function handleInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
+}
+
+function removeFile(index: number) {
+  uploadedFiles.value.splice(index, 1)
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -159,7 +165,7 @@ async function doSend() {
     const summary = text.slice(0, 200).trim() + '…（完整内容已转为附件文件）'
     const uploaded = await uploadTextAsFile(text)
     if (uploaded) {
-      files.push({ ...uploaded, size: 0 })
+      files.push({ ...uploaded, size: 0, is_image: false })
     }
     emit('update:modelValue', summary)
     // 先清空输入框

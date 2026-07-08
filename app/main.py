@@ -28,13 +28,23 @@ db.init()
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时启动后台任务，关闭时冲洗记忆 + 销毁沙盒。"""
     from app.cleanup import start_cleanup_task, stop_cleanup_task
+    from server.core.scheduler import scheduler_manager
+
     start_cleanup_task()
+
+    # 启动定时任务调度器（自动从 DB 恢复活跃任务）
+    await scheduler_manager.start()
+
     logger.info("应用已启动")
 
     yield
 
     # ---- 关闭流程 ----
     stop_cleanup_task()
+
+    # 关闭定时任务调度器
+    await scheduler_manager.shutdown()
+
     # 立即执行待处理的记忆提取（防止 --reload 重启导致丢失）
     try:
         from server.agent.memory import memory_store
@@ -148,7 +158,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 # 导入并注册路由模块
-from app.routes import chat, config, conversations, files, knowledge_bases, memory, settings  # noqa: E402
+from app.routes import chat, config, conversations, files, knowledge_bases, memory, scheduled_tasks, settings  # noqa: E402
 
 app.include_router(chat.router, prefix="/api", tags=["对话"])
 app.include_router(conversations.router, prefix="/api", tags=["会话历史"])
@@ -156,4 +166,5 @@ app.include_router(config.router, prefix="/api", tags=["配置"])
 app.include_router(files.router, prefix="/api", tags=["文件"])
 app.include_router(knowledge_bases.router, prefix="/api", tags=["知识库"])
 app.include_router(memory.router, prefix="/api", tags=["记忆"])
+app.include_router(scheduled_tasks.router, prefix="/api", tags=["定时任务"])
 app.include_router(settings.router, prefix="/api", tags=["用户设置"])

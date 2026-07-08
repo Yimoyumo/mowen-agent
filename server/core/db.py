@@ -70,6 +70,23 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
+
+-- 定时任务
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    prompt          TEXT NOT NULL,             -- 任务提示词
+    schedule_type   TEXT NOT NULL,             -- once / interval / cron
+    schedule_config TEXT NOT NULL DEFAULT '{}', -- JSON: cron表达式 / 间隔秒数 / 执行时间
+    kb_id           TEXT,
+    status          TEXT NOT NULL DEFAULT 'active', -- active / paused / completed / error
+    last_run_at     INTEGER,
+    next_run_at     INTEGER,
+    last_result     TEXT DEFAULT '',            -- 最近一次执行结果摘要
+    run_count       INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
 """
 
 

@@ -109,10 +109,15 @@ def search_web(query: str, max_results: int = 5, search_depth: str = "basic") ->
 
 
 @tool
-def fetch_webpage(url: str) -> str:
+def fetch_webpage(url: str, include_images: bool = False) -> str:
     """抓取指定网页内容，返回正文文本（转换为 Markdown 格式）。
+    支持：自动编码检测、HTML 清洗（去除脚本/导航/页脚）、正文区域提取。
+    参数 include_images 控制是否下载页面中的图片：
+      - False（默认）：仅抓取文本内容，速度快
+      - True：同时下载页面中的图片（最多 10 张），图片会在聊天中渲染
+    如果 URL 直接指向图片（Content-Type: image/*），无论此参数为何值都会下载。
     适用场景：用户给了具体网址，需要读取页面内容；或搜索到结果后想看详情。
-    不适用场景：搜索关键词——请用 search_web。"""
+    不适用场景：搜索关键词--请用 search_web。"""
     from server.agent.sandbox import get_or_create
 
     session_id = _current_session_id.get()
@@ -120,35 +125,148 @@ def fetch_webpage(url: str) -> str:
     if sb is None:
         return "（沙盒未启动，无法抓取网页）"
 
-    # httpx + html2text 已预装在沙盒镜像中
-    script = '''import sys
-import httpx, html2text
+    # httpx + beautifulsoup4 + html2text + chardet 已预装在沙盒镜像中
+    script = r'''import sys
+import os
+import httpx
+import chardet
+from bs4 import BeautifulSoup
+import html2text
+from urllib.parse import urljoin, urlparse
 
 url = sys.argv[1]
+include_images = len(sys.argv) > 2 and sys.argv[2] == "1"
+
+# ---------- 1. 发送 HTTP 请求 ----------
 try:
-    resp = httpx.get(url, timeout=20, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/*;q=0.8,*/*;q=0.5",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    resp = httpx.get(url, timeout=20, follow_redirects=True, headers=headers)
     resp.raise_for_status()
 except Exception as e:
     print(f"ERROR: 请求失败: {e}")
     sys.exit(1)
 
+# ---------- 2. 判断是否为图片 ----------
+content_type = resp.headers.get("content-type", "").lower()
+is_image = content_type.startswith("image/")
+
+if is_image:
+    parsed = urlparse(url)
+    ext = os.path.splitext(parsed.path)[1]
+    if not ext:
+        ext = "." + content_type.split("/")[-1].split(";")[0]
+        if ext == ".jpeg":
+            ext = ".jpg"
+    filename = "fetched_" + str(abs(hash(url)) % 100000) + ext
+    filepath = "/workspace/" + filename
+    with open(filepath, "wb") as f:
+        f.write(resp.content)
+    print("IMAGE_FILE:" + filepath)
+    sys.exit(0)
+
+# ---------- 3. 编码检测 ----------
+raw = resp.content
+if resp.encoding and resp.encoding.lower() != "iso-8859-1":
+    html_text = raw.decode(resp.encoding, errors="replace")
+else:
+    detected = chardet.detect(raw)
+    encoding = detected.get("encoding") or "utf-8"
+    html_text = raw.decode(encoding, errors="replace")
+
+# ---------- 4. HTML 清洗 ----------
+soup = BeautifulSoup(html_text, "lxml")
+
+for tag in soup.find_all(["script", "style", "noscript", "svg", "iframe", "form"]):
+    tag.decompose()
+
+for selector in ["nav", "footer", "header[class*='site']", "aside",
+                 "[role='navigation']", "[role='banner']", "[role='complementary']"]:
+    for el in soup.select(selector):
+        el.decompose()
+
+# ---------- 5. 下载页面中的图片（仅当 include_images=True 时）----------
+downloaded_images = []
+img_tags = soup.find_all("img") if include_images else []
+for img in img_tags[:10]:
+    src = img.get("src") or img.get("data-src")
+    if not src:
+        continue
+    img_url = urljoin(url, src)
+    if not img_url.startswith(("http://", "https://")):
+        continue
+    try:
+        img_resp = httpx.get(img_url, timeout=15, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        img_resp.raise_for_status()
+        img_ct = img_resp.headers.get("content-type", "").lower()
+        if not img_ct.startswith("image/"):
+            continue
+        ext = os.path.splitext(urlparse(img_url).path)[1]
+        if not ext:
+            ext = "." + img_ct.split("/")[-1].split(";")[0]
+            if ext == ".jpeg":
+                ext = ".jpg"
+        if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"):
+            continue
+        fname = "page_img_" + str(len(downloaded_images)) + ext
+        fpath = "/workspace/" + fname
+        with open(fpath, "wb") as f:
+            f.write(img_resp.content)
+        downloaded_images.append(fpath)
+        img["src"] = "DOWNLOADED:" + fpath
+    except Exception:
+        pass
+
+# ---------- 6. HTML -> Markdown ----------
+main = soup.find("main") or soup.find("article") or soup.body or soup
+html_content = str(main)
+
 h = html2text.HTML2Text()
 h.ignore_links = False
-h.ignore_images = True
+h.ignore_images = not include_images
+h.ignore_emphasis = False
 h.body_width = 0
-text = h.handle(resp.text)
-# 去除过多空行
-lines = [l.rstrip() for l in text.split("\\n")]
-text = "\\n".join(lines)
-# 截断
-if len(text) > 8000:
-    text = text[:8000] + "\\n\\n... （内容过长，已截断）"
-print(text)
+h.unicode_snob = True
+text = h.handle(html_content)
+
+# ---------- 7. 后处理 ----------
+lines = [line.rstrip() for line in text.split("\n")]
+cleaned = []
+blank = 0
+for line in lines:
+    if line.strip() == "":
+        blank += 1
+        if blank <= 2:
+            cleaned.append("")
+    else:
+        blank = 0
+        cleaned.append(line)
+text = "\n".join(cleaned).strip()
+
+# 输出图片标记 + 文本
+if downloaded_images:
+    img_marker = "IMAGES:" + ",".join(downloaded_images)
+    print(img_marker)
+    print("---TEXT---")
+
+if not text:
+    print("（页面无正文内容）")
+else:
+    MAX = 15000
+    if len(text) > MAX:
+        text = text[:MAX] + "\n\n... （内容过长，已截断，共 " + str(len(text)) + " 字符）"
+    print(text)
 '''
     sb.write_file("/workspace/_fetch.py", script)
-    # 用单引号包裹 URL 防止 shell 注入，并转义 URL 中的单引号
     safe_url = url.replace("'", "'\"'\"'")
-    exit_code, output = sb.exec(f"python3 /workspace/_fetch.py '{safe_url}'", timeout=30)
+    img_flag = "1" if include_images else "0"
+    exit_code, output = sb.exec(f"python3 /workspace/_fetch.py '{safe_url}' {img_flag}", timeout=30)
     output = output.strip()
     sb.exec("rm -f /workspace/_fetch.py")
 
@@ -159,8 +277,48 @@ print(text)
     if not output:
         return "（页面无内容）"
 
-    logger.info("抓取网页成功: %s (%d 字符)", url, len(output))
-    return output
+    # 处理输出中的图片标记
+    # 情况 1: URL 直接指向图片
+    if output.startswith("IMAGE_FILE:"):
+        img_path = output[len("IMAGE_FILE:"):].strip()
+        result = sb.export_file(img_path)
+        if result:
+            token, filename = result
+            img_url = f"/api/download/{token}/{filename}"
+            logger.info("抓取图片成功: %s -> %s", url, img_url)
+            return f"抓取到图片，在下方渲染：\n![{filename}]({img_url})"
+        else:
+            return "（图片导出失败）"
+
+    # 情况 2: 页面中包含已下载的图片
+    image_paths = []
+    text_content = output
+    if output.startswith("IMAGES:"):
+        parts = output.split("\n---TEXT---\n", 1)
+        if len(parts) == 2:
+            img_line = parts[0]
+            text_content = parts[1]
+            img_paths_str = img_line[len("IMAGES:"):].strip()
+            image_paths = [p.strip() for p in img_paths_str.split(",") if p.strip()]
+
+    # 导出图片并生成 Markdown 引用
+    image_markdown = ""
+    if image_paths:
+        img_parts = []
+        for img_path in image_paths:
+            result = sb.export_file(img_path)
+            if result:
+                token, filename = result
+                dl_url = f"/api/download/{token}/{filename}"
+                img_parts.append(f"![{filename}]({dl_url})")
+        if img_parts:
+            image_markdown = "\n\n--- 抓取到的图片 ---\n" + "\n\n".join(img_parts) + "\n"
+
+    logger.info("抓取网页成功: %s (%d 字符, %d 张图片)", url, len(text_content), len(image_paths))
+    return text_content + image_markdown
+
+
+
 
 
 # ==================== 沙盒工具 ====================
@@ -363,9 +521,13 @@ def search_skills(query: str) -> str:
             ["npx", "-y", "skills", "find", query],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
             cwd=str(Path.cwd()),
             stdin=subprocess.DEVNULL,
+            env={
+                **__import__('os').environ,
+                'npm_config_registry': 'https://registry.npmmirror.com/',
+            },
         )
         output = result.stdout.strip() or result.stderr.strip()
         if not output:
@@ -416,10 +578,15 @@ def install_skill(package: str) -> str:
             ["npx", "-y", "skills", "add", package, "-y"],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
             cwd=str(Path.cwd()),
             stdin=subprocess.DEVNULL,
-            env={**__import__('os').environ, 'GIT_HTTP_LOW_SPEED_LIMIT': '1000', 'GIT_HTTP_LOW_SPEED_TIME': '60'},
+            env={
+                **__import__('os').environ,
+                'GIT_HTTP_LOW_SPEED_LIMIT': '1000',
+                'GIT_HTTP_LOW_SPEED_TIME': '120',
+                'npm_config_registry': 'https://registry.npmmirror.com/',
+            },
         )
 
         output = result.stdout.strip()
@@ -456,6 +623,91 @@ def install_skill(package: str) -> str:
         return f"（安装失败: {exc}）"
 
 
+@tool
+def export_mcp_file(filename: str) -> str:
+    """将 MCP 浏览器工具产生的文件（截图、PDF、下载等）导入沙盒。
+
+    MCP 浏览器（@playwright/mcp）的截图/PDF/下载文件存储在 downloads/playwright/ 目录，
+    此工具将文件从宿主机导入到沙盒的 /workspace/ 目录。
+
+    导入后，文件位于 /workspace/{filename}，你可以：
+    - 用 sandbox_read_file 查看文本文件
+    - 用 sandbox_export_file 导出下载链接给用户
+    - 用 sandbox_run 对文件做进一步处理
+
+    适用场景：
+    - 浏览器截图后想保存到沙盒处理或导出给用户
+    - 浏览器下载了文件想提供给用户
+    - 浏览器生成的 PDF 需要交付
+
+    参数:
+        filename: 文件名（仅文件名，不含路径），如 "screenshot.png"、"report.pdf"
+    """
+    from pathlib import Path
+
+    from server.agent.sandbox import get_or_create
+
+    mcp_output_dir = Path("downloads/playwright")
+    if not mcp_output_dir.exists():
+        return f"（MCP 输出目录不存在: {mcp_output_dir}，浏览器可能还未产生任何文件）"
+
+    # 安全校验：防止路径穿越
+    safe_name = Path(filename).name
+    if safe_name != filename or safe_name in (".", ".."):
+        return f"（无效的文件名: {filename}）"
+
+    src_path = mcp_output_dir / safe_name
+    if not src_path.exists():
+        # 列出可用文件帮助 Agent 定位
+        files = list(mcp_output_dir.iterdir())
+        if not files:
+            return f"（MCP 输出目录为空，文件 '{safe_name}' 不存在）"
+        file_list = "\n".join(f"  - {f.name}" for f in sorted(files))
+        return f"（文件 '{safe_name}' 不存在，当前可用文件:\n{file_list}）"
+
+    # 获取当前会话的沙盒
+    session_id = _current_session_id.get()
+    sb = get_or_create(session_id) if session_id else None
+    if sb is None:
+        return "（沙盒未启动）"
+
+    # 导入到沙盒 /workspace/
+    dest = sb.import_file(str(src_path))
+    if dest is None:
+        return f"（导入沙盒失败: 无法将 {safe_name} 导入沙盒）"
+
+    # 提示 Agent 下一步该怎么做
+    img_exts = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp')
+    if safe_name.lower().endswith(img_exts):
+        return f"✓ 文件已导入沙盒: /workspace/{safe_name}（图片）\n如需导出给用户，请调用 sandbox_export_file('/workspace/{safe_name}')"
+    else:
+        return f"✓ 文件已导入沙盒: /workspace/{safe_name}\n如需导出给用户，请调用 sandbox_export_file('/workspace/{safe_name}')"
+
+
+@tool
+def list_mcp_files() -> str:
+    """列出 MCP 浏览器工具产生的所有输出文件（截图、PDF、下载等）。
+    在导出文件之前先查看有哪些可用文件。"""
+    from pathlib import Path
+
+    mcp_output_dir = Path("downloads/playwright")
+    if not mcp_output_dir.exists():
+        return "（MCP 输出目录不存在，浏览器可能还未产生任何文件）"
+
+    files = sorted(mcp_output_dir.iterdir())
+    if not files:
+        return "（MCP 输出目录为空，还没有任何文件）"
+
+    lines = []
+    for f in files:
+        if f.is_file():
+            size_kb = f.stat().st_size / 1024
+            lines.append(f"  - {f.name} ({size_kb:.1f} KB)")
+        elif f.is_dir():
+            lines.append(f"  - {f.name}/ (目录)")
+    return "MCP 浏览器输出文件:\n" + "\n".join(lines)
+
+
 def get_agent_tools() -> list:
     """获取 Agent 可用工具列表。"""
     return [
@@ -468,6 +720,8 @@ def get_agent_tools() -> list:
         sandbox_read_file,
         sandbox_list_files,
         sandbox_export_file,
+        export_mcp_file,
+        list_mcp_files,
         load_skill,
         search_skills,
         install_skill,

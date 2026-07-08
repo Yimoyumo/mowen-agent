@@ -1,0 +1,122 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic:
+      - generic [ref=e6]:
+        - link "新闻" [ref=e7] [cursor=pointer]:
+          - /url: http://news.baidu.com
+        - link "hao123" [ref=e8] [cursor=pointer]:
+          - /url: https://www.hao123.com?src=from_pc
+        - link "地图" [ref=e9] [cursor=pointer]:
+          - /url: http://map.baidu.com
+        - link "贴吧" [ref=e10] [cursor=pointer]:
+          - /url: http://tieba.baidu.com/
+        - link "视频" [ref=e11] [cursor=pointer]:
+          - /url: https://haokan.baidu.com/?sfrom=baidu-top
+        - link "图片" [ref=e12] [cursor=pointer]:
+          - /url: http://image.baidu.com/
+        - link "网盘" [ref=e13] [cursor=pointer]:
+          - /url: https://pan.baidu.com?from=1026962h
+        - link "文库" [ref=e14] [cursor=pointer]:
+          - /url: https://wenku.baidu.com/?fr=bdpcindex
+        - link "文心" [ref=e15] [cursor=pointer]:
+          - /url: https://chat.baidu.com/search?isShowHello=1&pd=csaitab&setype=csaitab&extParamsJson=%7B%22enter_type%22%3A%22home_tab%22%7D
+        - link "搭子DuMate" [ref=e16] [cursor=pointer]:
+          - /url: https://dumate.cn?track=bdsy
+        - link "更多" [ref=e18] [cursor=pointer]:
+          - /url: http://www.baidu.com/more/
+      - generic [ref=e19]:
+        - generic [ref=e20] [cursor=pointer]: 设置
+        - link "登录" [ref=e21] [cursor=pointer]:
+          - /url: https://passport.baidu.com/v2/?login&tpl=mn&u=http%3A%2F%2Fwww.baidu.com%2F&sms=5
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - img [ref=e26]
+        - generic:
+          - link "点击一下，了解更多":
+            - /url: //www.baidu.com/s?wd=%E7%99%BE%E5%BA%A6%E7%83%AD%E6%90%9C&sa=ire_dl_gh_logo_texing&rsv_dl=igh_logo_pcs
+      - generic [ref=e31]:
+        - generic [ref=e34]:
+          - textbox "温网女单四强诞生两席" [active] [ref=e36]
+          - generic [ref=e38]:
+            - generic [ref=e39]:
+              - img [ref=e47] [cursor=pointer]
+              - generic [ref=e50]:
+                - img [ref=e54] [cursor=pointer]
+                - img [ref=e59] [cursor=pointer]
+            - button "百度一下" [ref=e63] [cursor=pointer]
+        - link "复杂问题就找文心助手，深入思考回答更优 " [ref=e67] [cursor=pointer]:
+          - /url: https://chat.baidu.com/search?extParams=%7B%22enter_type%22%3A%22home_operate%22%7D&isShowHello=1
+          - img [ref=e68]
+          - generic [ref=e69]:
+            - generic [ref=e70]: 复杂问题就找文心助手，深入思考回答更优
+            - generic [ref=e71]: 
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - link "百度热搜":
+            - /url: https://top.baidu.com/board?platform=pc&sa=pcindex_entry
+            - generic "百度热搜" [ref=e76] [cursor=pointer]: 
+          - generic [ref=e77] [cursor=pointer]:
+            - generic [ref=e78]: 
+            - text: 换一换
+        - list:
+          - listitem [ref=e79]:
+            - link " 加快高水平科技自立自强" [ref=e80] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E5%8A%A0%E5%BF%AB%E9%AB%98%E6%B0%B4%E5%B9%B3%E7%A7%91%E6%8A%80%E8%87%AA%E7%AB%8B%E8%87%AA%E5%BC%BA&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e81]: 
+              - text: 加快高水平科技自立自强
+          - listitem [ref=e83]:
+            - link "5 救命药从24元涨到600元还买不到" [ref=e84] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E6%95%91%E5%91%BD%E8%8D%AF%E4%BB%8E24%E5%85%83%E6%B6%A8%E5%88%B0600%E5%85%83%E8%BF%98%E4%B9%B0%E4%B8%8D%E5%88%B0&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e85]: "5"
+              - text: 救命药从24元涨到600元还买不到
+            - generic [ref=e86]: 热
+          - listitem [ref=e87]:
+            - link "1 本届世界杯7队仍不败" [ref=e88] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E6%9C%AC%E5%B1%8A%E4%B8%96%E7%95%8C%E6%9D%AF7%E9%98%9F%E4%BB%8D%E4%B8%8D%E8%B4%A5&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e89]: "1"
+              - text: 本届世界杯7队仍不败
+            - generic [ref=e90]: 热
+          - listitem [ref=e91]:
+            - link "6 女子成植物人15年用坏4部空调" [ref=e92] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E5%A5%B3%E5%AD%90%E6%88%90%E6%A4%8D%E7%89%A9%E4%BA%BA15%E5%B9%B4%E7%94%A8%E5%9D%8F4%E9%83%A8%E7%A9%BA%E8%B0%83&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e93]: "6"
+              - text: 女子成植物人15年用坏4部空调
+          - listitem [ref=e95]:
+            - link "2 超强台风巴威即将进入48小时警戒线" [ref=e96] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E8%B6%85%E5%BC%BA%E5%8F%B0%E9%A3%8E%E5%B7%B4%E5%A8%81%E5%8D%B3%E5%B0%86%E8%BF%9B%E5%85%A548%E5%B0%8F%E6%97%B6%E8%AD%A6%E6%88%92%E7%BA%BF&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e97]: "2"
+              - text: 超强台风巴威即将进入48小时警戒线
+            - generic [ref=e98]: 热
+          - listitem [ref=e99]:
+            - link "7 男子送外卖爬上5楼误入一场画展" [ref=e100] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E7%94%B7%E5%AD%90%E9%80%81%E5%A4%96%E5%8D%96%E7%88%AC%E4%B8%8A5%E6%A5%BC%E8%AF%AF%E5%85%A5%E4%B8%80%E5%9C%BA%E7%94%BB%E5%B1%95&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e101]: "7"
+              - text: 男子送外卖爬上5楼误入一场画展
+          - listitem [ref=e103]:
+            - link "3 从四个新数据读懂上半年中国经济" [ref=e104] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E4%BB%8E%E5%9B%9B%E4%B8%AA%E6%96%B0%E6%95%B0%E6%8D%AE%E8%AF%BB%E6%87%82%E4%B8%8A%E5%8D%8A%E5%B9%B4%E4%B8%AD%E5%9B%BD%E7%BB%8F%E6%B5%8E&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e105]: "3"
+              - text: 从四个新数据读懂上半年中国经济
+          - listitem [ref=e107]:
+            - link "8 法拉利高管：中国车企像在开发快消品" [ref=e108] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E6%B3%95%E6%8B%89%E5%88%A9%E9%AB%98%E7%AE%A1%EF%BC%9A%E4%B8%AD%E5%9B%BD%E8%BD%A6%E4%BC%81%E5%83%8F%E5%9C%A8%E5%BC%80%E5%8F%91%E5%BF%AB%E6%B6%88%E5%93%81&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e109]: "8"
+              - text: 法拉利高管：中国车企像在开发快消品
+            - generic [ref=e110]: 热
+          - listitem [ref=e111]:
+            - link "4 中国潜射战略导弹试射内情曝光" [ref=e112] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=%E4%B8%AD%E5%9B%BD%E6%BD%9C%E5%B0%84%E6%88%98%E7%95%A5%E5%AF%BC%E5%BC%B9%E8%AF%95%E5%B0%84%E5%86%85%E6%83%85%E6%9B%9D%E5%85%89&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e113]: "4"
+              - text: 中国潜射战略导弹试射内情曝光
+            - generic [ref=e114]: 热
+          - listitem [ref=e115]:
+            - link "9 C罗的分段睡眠法普通人能模仿吗" [ref=e116] [cursor=pointer]:
+              - /url: https://www.baidu.com/s?wd=C%E7%BD%97%E7%9A%84%E5%88%86%E6%AE%B5%E7%9D%A1%E7%9C%A0%E6%B3%95%E6%99%AE%E9%80%9A%E4%BA%BA%E8%83%BD%E6%A8%A1%E4%BB%BF%E5%90%97&sa=fyb_n_homepage&rsv_dl=fyb_n_homepage&from=super&cl=3&tn=baidutop10&fr=top1000&rsv_idx=2&hisfilter=1
+              - generic [ref=e117]: "9"
+              - text: C罗的分段睡眠法普通人能模仿吗
+  - generic [ref=e119]:
+    - generic:
+      - generic:
+        - generic:
+          - img
+    - img [ref=e124] [cursor=pointer]

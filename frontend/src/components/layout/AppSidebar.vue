@@ -43,6 +43,10 @@ function goSettings() {
   router.push('/settings')
 }
 
+function goScheduledTasks() {
+  router.push('/scheduled-tasks')
+}
+
 async function loadExtensions() {
   try {
     extensions.value = await getExtensions()
@@ -130,7 +134,7 @@ onMounted(loadExtensions)
             }"
           ></span>
           <span class="ext-name">{{ mcp.name }}</span>
-          <span class="ext-tag" v-if="mcpStatus[mcp.name]?.ok">{{ mcpStatus[mcp.name].tool_count }} 工具</span>
+          <span class="ext-tag" v-if="mcpStatus[mcp.name]?.ok">{{ mcpStatus[mcp.name]?.tool_count ?? 0 }} 工具</span>
           <span class="ext-tag err" v-else-if="mcpStatus[mcp.name]?.ok === false">不可用</span>
           <span class="ext-tag" v-else>{{ mcp.transport }}</span>
         </div>
@@ -138,6 +142,10 @@ onMounted(loadExtensions)
     </div>
 
     <div class="sidebar-footer">
+      <button class="settings-btn" :title="collapsed ? '定时任务' : ''" @click="goScheduledTasks">
+        <el-icon><AlarmClock /></el-icon>
+        <span v-if="!collapsed">定时任务</span>
+      </button>
       <button class="settings-btn" :title="collapsed ? '设置' : ''" @click="goSettings">
         <el-icon><Setting /></el-icon>
         <span v-if="!collapsed">设置</span>
@@ -371,6 +379,9 @@ onMounted(loadExtensions)
 .sidebar-footer {
   padding-top: 12px;
   border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .settings-btn {
