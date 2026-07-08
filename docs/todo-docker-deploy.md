@@ -1,7 +1,8 @@
-# 待办：云服务器 Docker 部署
+# 云服务器 Docker 部署
 
-> 状态：⏳ 待处理（项目基本完成后再做）
+> 状态：✅ 方案已设计完成
 > 创建时间：2026-07-07
+> 更新时间：2026-07-08
 > 服务器配置：2核 4G
 
 ## 资源约束
@@ -127,9 +128,91 @@ docker compose up -d
 
 - **真 DinD（privileged: true）**：安全风险大、性能差、镜像翻倍、容易出怪问题
 
-## 相关文件
+## 已实现的部署文件
 
-- `Dockerfile.sandbox` — 沙盒镜像定义
-- `server/agent/sandbox.py` — 沙盒管理（`docker.from_env()` 调用）
-- `docker-compose.yml` — 待创建
-- `Dockerfile.app` — 待创建
+| 文件 | 说明 |
+|------|------|
+| `Dockerfile.app` | 项目镜像：多阶段构建（前端 build + 后端 + Nginx） |
+| `Dockerfile.sandbox` | 沙盒镜像（预装 Python 包 + 系统工具） |
+| `docker-compose.yml` | 编排配置（Docker Socket 挂载 + 数据卷 + 资源限制） |
+| `deploy/nginx.conf` | Nginx 配置（SPA 路由 + API 反代 + SSE 支持） |
+| `deploy/start.sh` | 启动脚本（同时运行 Nginx + Uvicorn） |
+| `deploy/build-and-deploy.sh` | 一键部署脚本（本地构建 -> 传输 -> 启动） |
+| `deploy/server-init.sh` | 服务器端初始化脚本（装 Docker + 创建目录） |
+| `.dockerignore` | Docker 构建排除规则 |
+
+### 架构
+
+```
+                    :80
+                     │
+              ┌──────┴──────┐
+              │   Nginx     │  (容器内)
+              │  ┌────────┐ │
+              │  │ 静态文件 │ │  /usr/share/nginx/html (Vue SPA)
+              │  └────────┘ │
+              │  ┌────────┐ │
+              │  │ /api/  │─┼──> 127.0.0.1:8000 (Uvicorn)
+              │  └────────┘ │  (SSE 流式: proxy_buffering off)
+              └─────────────┘
+                     │
+              ┌──────┴──────┐
+              │  FastAPI     │  (容器内)
+              │  Uvicorn     │
+              │  LangGraph   │
+              └──────┬───────┘
+                     │ docker.sock (宿主机)
+              ┌──────┴──────┐
+              │  沙盒容器    │  mowen-sandbox:latest
+              │  (按需创建)  │  256MB / 15min 超时
+              └─────────────┘
+```
+
+### 资源调整（已应用）
+
+`server/agent/sandbox.py` 已按 2核4G 调整：
+
+| 配置项 | 原值 | 新值 |
+|-------|------|------|
+| `_SANDBOX_MEMORY` | 512m | **256m** |
+| `_MAX_SANDBOXES` | 10 | **3** |
+| `_SANDBOX_IDLE_TIMEOUT` | 1800s | **900s** |
+
+### 一键部署
+
+```bash
+# 本地执行（需要能 ssh 到服务器）
+chmod +x deploy/build-and-deploy.sh
+./deploy/build-and-deploy.sh 123.45.67.89
+
+# 或手动分步：
+# 1. 本地构建
+docker build -t mowen-app:latest -f Dockerfile.app .
+docker build -t mowen-sandbox:latest -f Dockerfile.sandbox .
+
+# 2. 传输
+docker save mowen-app:latest | gzip > /tmp/mowen-app.tar.gz
+docker save mowen-sandbox:latest | gzip > /tmp/mowen-sandbox.tar.gz
+scp /tmp/mowen-*.tar.gz root@服务器IP:/tmp/
+
+# 3. 服务器加载 + 启动
+ssh root@服务器IP 'bash -s' < deploy/server-init.sh
+scp docker-compose.yml root@服务器IP:/root/mowen-deploy/
+ssh root@服务器IP 'cd /root/mowen-deploy && docker compose up -d'
+```
+
+### 日常运维
+
+```bash
+# 查看日志
+docker compose logs -f
+
+# 重启
+docker compose restart
+
+# 更新（本地重新构建 -> 传输 -> 加载 -> 重启）
+./deploy/build-and-deploy.sh 服务器IP
+
+# 进入容器调试
+docker exec -it mowen-app bash
+```

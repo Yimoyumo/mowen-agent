@@ -9,6 +9,7 @@ import type {
   UserProfile,
   MemoryResponse,
   MemoryItem,
+  EmbeddingConfig,
 } from '@/types/api'
 
 // ==================== 用户设置 ====================
@@ -89,6 +90,26 @@ export async function testModel(
 
 export async function setCurrentModel(modelRef: string): Promise<void> {
   await apiClient.put('/settings/model', { model: modelRef })
+}
+
+// ==================== 向量模型 ====================
+
+export async function getEmbeddingConfig(): Promise<EmbeddingConfig> {
+  const { data } = await apiClient.get<EmbeddingConfig>('/settings/embedding')
+  return data
+}
+
+export async function setEmbeddingModel(modelRef: string): Promise<void> {
+  await apiClient.put('/settings/embedding', { embedding_model: modelRef })
+}
+
+export async function setEmbeddingCustom(config: {
+  enabled?: boolean
+  base_url?: string
+  api_key?: string
+  model?: string
+}): Promise<void> {
+  await apiClient.put('/settings/embedding/custom', config)
 }
 
 // ==================== 用户画像 ====================

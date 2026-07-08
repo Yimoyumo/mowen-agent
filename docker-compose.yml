@@ -1,0 +1,33 @@
+services:
+  app:
+    image: mowen-app:latest
+    container_name: mowen-app
+    ports:
+      - "127.0.0.1:8001:80"    # 只绑定本地，由宿主机 Nginx 反代
+    volumes:
+      # Docker Socket：让沙盒能创建/管理容器
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 数据持久化
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./uploads:/app/uploads
+      - ./vectorstore:/app/vectorstore
+      - ./logs:/app/logs
+      # 技能目录
+      - ./skills:/app/skills
+      - ./.agents/skills:/app/.agents/skills
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    # 资源限制：2核4G 服务器
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

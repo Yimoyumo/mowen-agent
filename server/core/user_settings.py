@@ -122,6 +122,12 @@ _DEFAULT_SETTINGS = {
     "vector_store": {
         "dir": "./vectorstore",
     },
+    "embedding_custom": {
+        "enabled": False,
+        "base_url": "",
+        "api_key": "",
+        "model": "",
+    },
     "persona": {"enabled": False, "content": ""},
     "user_profile": {"skills": "", "interests": "", "preferences": ""},
     "updated_at": None,
@@ -166,6 +172,7 @@ def build_config(settings: dict):
         frequency_penalty=gen.get("frequency_penalty"),
         presence_penalty=gen.get("presence_penalty"),
         vector_store_dir=vs.get("dir", "./vectorstore"),
+        embedding_custom=settings.get("embedding_custom", {}),
         chunk_size=chunk.get("size", 500),
         chunk_overlap=chunk.get("overlap", 50),
         chapter_split=chunk.get("chapter_split", False),

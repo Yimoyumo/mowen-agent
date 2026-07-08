@@ -25,6 +25,7 @@ class RAGConfig:
     frequency_penalty: float | None = None
     presence_penalty: float | None = None
     vector_store_dir: str = "./vectorstore"
+    embedding_custom: dict = field(default_factory=dict)  # 自定义向量模型配置
     chunk_size: int = 500
     chunk_overlap: int = 50
     chapter_split: bool = False

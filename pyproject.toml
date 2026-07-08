@@ -33,10 +33,28 @@ dependencies = [
     "apscheduler==3.11.3",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+]
+
 [tool.uv]
 # 强制覆盖 zhipuai 的 pyjwt<2.9 约束（实际兼容 pyjwt 2.13）
 override-dependencies = ["pyjwt>=2.10.1"]
 
 [tool.uv.pip]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
 

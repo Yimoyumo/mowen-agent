@@ -201,6 +201,30 @@ export interface UserProfile {
   preferences: string
 }
 
+// ==================== 向量模型配置 ====================
+
+export interface EmbeddingModelOption {
+  provider_id: string
+  provider_name: string
+  model: string
+  ref: string               // "provider/model"
+  has_api_key: boolean
+}
+
+export interface EmbeddingCustom {
+  enabled: boolean
+  base_url: string
+  api_key: string
+  model: string
+  has_api_key: boolean
+}
+
+export interface EmbeddingConfig {
+  embedding_model: string   // 当前选中的 "provider/model"，空字符串表示自动推断
+  available_models: EmbeddingModelOption[]
+  embedding_custom: EmbeddingCustom
+}
+
 export interface MemoryItem {
   id: string
   type: string

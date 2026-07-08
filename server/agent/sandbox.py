@@ -4,7 +4,7 @@
 - 执行任意 shell 命令（含 pip install、编译等）
 - 读写文件、浏览目录
 - 沙盒按会话 ID 管理，跨消息持久化（同一会话内文件不丢失）
-- 超过 30 分钟空闲自动清理
+- 超过 15 分钟空闲自动清理
 - export_file: 将容器内文件导出到宿主机供用户下载
 """
 
@@ -25,6 +25,7 @@ logger = get_logger(__name__)
 
 _SANDBOX_IMAGE = "mowen-sandbox:latest"  # 优先用自建镜像（预装工具），不存在时回退到 python:3.12-slim
 _SANDBOX_MEMORY = "512m"
+_SANDBOX_MEMORY = "256m"   # 2核4G 服务器降为 256m（pandas 10万行仍可跑）
 _SANDBOX_CPU = 1.0
 _DEFAULT_TIMEOUT = 60          # 默认命令超时（秒）
 
@@ -32,9 +33,9 @@ _DOWNLOADS_DIR = Path("downloads")  # 文件导出目录
 _UPLOADS_DIR = Path("uploads")      # 用户上传暂存目录
 
 # 沙盒池配置
-_MAX_SANDBOXES = 10             # 全局最大沙盒数（超过时淘汰最久未用的）
-_SANDBOX_IDLE_TIMEOUT = 1800    # 30 分钟空闲自动销毁
-_CLEANUP_INTERVAL = 300        # 每 5 分钟检查一次超时
+_MAX_SANDBOXES = 3              # 2核4G 最多支撑 2-3 个并发沙盒
+_SANDBOX_IDLE_TIMEOUT = 900      # 15 分钟空闲自动销毁（更快释放内存）
+_CLEANUP_INTERVAL = 300         # 每 5 分钟检查一次超时
 
 
 class Sandbox:

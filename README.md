@@ -21,7 +21,11 @@
 - **知识库管理**：创建、上传文档、重建向量库、删除，按类型（小说/技术/项目/通用）定制回答策略
 - **Markdown 渲染**：代码块、表格、列表、图片等完整支持
 - **会话持久化**：localStorage 保存对话历史和运行时设置
-- **设置页面**：可视化管理厂商 API Key、模型选择、人设、用户画像、记忆
+- **设置页面**：可视化管理厂商 API Key、模型选择、向量模型、人设、用户画像、记忆、MCP
+- **定时任务**：APScheduler 定时执行 Agent 任务，支持 cron/间隔/单次触发，前端可视化管理
+- **MCP 浏览器**：@playwright/mcp 集成，Agent 可浏览网页、截图、点击交互
+- **网页抓取**：抓取指定 URL 的网页内容并转为 Markdown，可选抓取图片
+- **测试覆盖**：pytest 187 个测试用例覆盖核心模块
 
 ## 架构
 
@@ -53,15 +57,18 @@
 | 前端 | Vue 3 + TypeScript + Vite + Element Plus |
 | Agent 框架 | LangGraph (ReAct) + create_react_agent |
 | LLM | DeepSeek / 智谱 AI（可切换，注册表模式） |
-| Embedding | 智谱 AI embedding-3 |
+| Embedding | 智谱 AI embedding-3 / 可自定义 |
 | 向量库 | Chroma |
 | 沙盒 | Docker SDK for Python（mowen-sandbox 自建镜像） |
-| MCP | langchain-mcp-adapters |
+| MCP | langchain-mcp-adapters + @playwright/mcp |
+| 定时任务 | APScheduler (AsyncIOScheduler + SQLite) |
 | API | FastAPI + SSE 流式 |
 | 日志 | logging + RotatingFileHandler + RequestIdFilter 请求追踪 |
 | 错误处理 | 统一异常体系 + 全局异常处理器 + lifespan 生命周期 |
 | 数据库 | SQLite (WAL 模式 + 线程本地连接) |
 | 会话持久化 | SQLite + localStorage 双写同步 |
+| 测试 | pytest + pytest-asyncio + pytest-cov（187 个用例） |
+| 部署 | Docker Compose（Nginx + Uvicorn 单容器） |
 
 ## 快速开始
 
@@ -85,6 +92,29 @@ npm run dev
 
 浏览器访问 http://localhost:5173
 
+### 测试
+
+```sh
+# 运行全部测试
+python -m pytest tests/ -v
+
+# 带覆盖率报告
+python -m pytest tests/ --cov=server --cov=app --cov-report=term-missing
+```
+
+### Docker 部署
+
+```sh
+# 构建镜像
+docker build -t mowen-app:latest -f Dockerfile.app .
+docker build -t mowen-sandbox:latest -f Dockerfile.sandbox .
+
+# 启动
+docker compose up -d
+
+# 访问 http://localhost（或配置 Nginx 反代）
+```
+
 ## 项目结构
 
 ```
@@ -100,7 +130,9 @@ npm run dev
 │   │   ├── db.py                   SQLite 数据库封装（WAL + 线程本地连接）
 │   │   ├── logging_config.py       日志模块（Logger 工厂 + RequestIdFilter）
 │   │   ├── user_settings.py        用户配置管理器（默认值 + 合并 + 迁移）
-│   │   └── conversation_store.py    对话历史持久化
+│   │   ├── conversation_store.py    对话历史持久化
+│   │   ├── scheduler.py            定时任务调度器（APScheduler）
+│   │   └── scheduled_task_store.py  定时任务存储（SQLite）
 │   ├── llm/                    LLM 抽象层
 │   │   ├── factory.py              LLM 厂商工厂（注册表模式）
 │   │   ├── embeddings.py           Embedding 模型
@@ -122,7 +154,7 @@ npm run dev
 │   │   └── query_expansion.py      查询扩写
 │   └── agent/                  Agent 子包
 │       ├── graph.py                LangGraph ReAct Agent
-│       ├── tools.py                12 个工具（搜索/沙盒/网页抓取/技能）
+│       ├── tools.py                14 个工具（搜索/沙盒/网页抓取/技能/MCP导出）
 │       ├── sandbox.py               Docker 沙盒管理器
 │       ├── mcp.py                   MCP 客户端（逐服务器容错）
 │       ├── memory.py                长期记忆（提取 + 存储 + 检索）
@@ -140,7 +172,8 @@ npm run dev
 │       ├── files.py               文件上传/下载（200MB+类型白名单）
 │       ├── knowledge_bases.py     知识库 CRUD
 │       ├── memory.py              记忆管理 API
-│       └── settings.py            厂商/模型/人设/画像/MCP 配置 API
+│       ├── scheduled_tasks.py     定时任务 CRUD + 调度控制
+│       └── settings.py            厂商/模型/向量模型/人设/画像/MCP 配置 API
 │
 ├── skills/                 # 技能文件（Markdown，自动扫描）
 │   ├── data_analysis.md         数据分析工作流程
@@ -151,6 +184,10 @@ npm run dev
 │   └── word-document/           Word 文档操作
 │
 ├── Dockerfile.sandbox       # 沙盒 Docker 镜像定义
+├── Dockerfile.app           # 应用镜像（前端+后端+Nginx 多阶段构建）
+├── docker-compose.yml       # Docker Compose 编排配置
+├── deploy/                  # 部署配置（nginx.conf / start.sh / 部署脚本）
+├── tests/                  # 测试用例（187 个 pytest 测试）
 │
 ├── frontend/               # Vue 3 前端
 │   └── src/
@@ -163,7 +200,7 @@ npm run dev
 │       ├── composables/        组合式函数（useChat / useConfig / useKnowledgeBase / useSettings）
 │       ├── stores/             Pinia 状态管理（chat + knowledgeBase）
 │       ├── types/              类型定义
-│       └── views/              页面（HomeView / SettingsView）
+│       └── views/              页面（HomeView / SettingsView / ScheduledTasksView）
 │
 ├── data/                   # 文档上传目录 + 用户配置 + 记忆数据库
 ├── logs/                   # 日志文件（自动创建）
@@ -216,7 +253,18 @@ npm run dev
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
       "transport": "stdio"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp", "--headless", "--browser", "chromium", "--output-dir", "downloads/playwright"],
+      "transport": "stdio"
     }
+  },
+  "embedding_custom": {
+    "enabled": false,
+    "base_url": "",
+    "api_key": "",
+    "model": ""
   },
   "skills": ["data_analysis"],
   "logging": {
@@ -250,6 +298,7 @@ npm run dev
 | `skills` | 启用的技能列表，对应 skills/*.md 文件 |
 | `logging` | 日志级别、文件路径、按模块独立级别 |
 | `vector_store` | Chroma 持久化目录 |
+| `embedding_custom` | 自定义向量模型：独立 base_url / api_key / model，启用后优先级最高 |
 | `persona` | 人格设定（如猫娘助手） |
 | `user_profile` | 用户画像（职业、技能等上下文） |
 | `memory` | 长期记忆配置（最大条数、包含画像等） |
@@ -297,9 +346,11 @@ Agent: → 不调用工具，直接回答
 | `sandbox_read_file` | 读取沙盒中的文件 |
 | `sandbox_list_files` | 列出沙盒目录 |
 | `sandbox_export_file` | 导出沙盒文件为下载链接（图片直接渲染） |
+| `export_mcp_file` | 将 MCP 浏览器文件导入沙盒（截图/PDF/下载） |
+| `list_mcp_files` | 列出 MCP 浏览器输出的所有文件 |
 | `search_knowledge_base` | 搜索用户上传的知识库 |
 | `search_web` | 联网搜索实时信息（Tavily） |
-| `fetch_webpage` | 抓取指定网址的网页内容 |
+| `fetch_webpage` | 抓取指定网址的网页内容（可选抓取图片） |
 | `load_skill` | 加载技能的完整指导内容 |
 | `search_skills` | 从 skills.sh 搜索开源技能 |
 | `install_skill` | 安装技能到项目并自动启用 |
@@ -315,7 +366,7 @@ Agent: → 不调用工具，直接回答
 | 段落 | 来源 | 说明 |
 |------|------|------|
 | 身份声明 | 静态 | "你是墨问，一个智能 AI Agent 助手" |
-| 能力清单 | 静态 | 8 个工具的用途与使用场景 |
+| 能力清单 | 静态 | 14 个工具的用途与使用场景 |
 | 沙盒说明 | 静态 | Linux 容器环境、预装工具、pip/apt 镜像 |
 | 工具原则 | 静态 | 何时用沙盒/知识库/搜索/抓取/直接回答 |
 | 文件处理 | 静态 | 上传文件自动导入 /workspace/，压缩包先解压 |
@@ -420,5 +471,75 @@ if not kb:
 ### MCP 容错
 
 - 逐服务器独立连接，单个失败不影响其他
-- 每个服务器 10 秒超时保护
+- 每个服务器 30 秒超时保护
 - 全部失败时 Agent 仍可使用内置工具
+
+### 定时任务
+
+基于 APScheduler 实现的定时任务系统：
+- 支持 cron 表达式、固定间隔、单次触发三种模式
+- 任务存储在 SQLite，重启后自动恢复
+- 每个任务绑定一个 Agent 对话，到时自动执行并保存结果
+- 前端可视化管理：创建/编辑/暂停/恢复/立即执行
+
+### 向量模型配置
+
+向量模型支持三种配置方式（优先级从高到低）：
+1. **自定义配置**（`embedding_custom`）：独立 base_url / api_key / model，与厂商配置解耦
+2. **厂商模型选择**（`embedding_model`）：从已配置 API Key 的厂商中选择 embedding 模型
+3. **自动推断**：系统从所有厂商模型列表中自动查找 embedding 类模型
+
+前端设置页「向量模型」tab 可视化管理，支持开关自定义配置、选择厂商模型。
+
+### Docker 部署
+
+#### 架构
+
+```
+         :80
+           │
+    ┌──────┴──────┐
+    │   Nginx     │  ← 容器内，托管前端 + 反代 API
+    │  静态文件    │     /  -> Vue SPA (try_files)
+    │  /api/ 反代  │     /api/ -> 127.0.0.1:8000 (SSE: proxy_buffering off)
+    └──────┬──────┘
+    ┌──────┴──────┐
+    │  Uvicorn    │  ← 同一容器内
+    │  FastAPI    │
+    └──────┬──────┘
+           │ docker.sock (挂载宿主机)
+    ┌──────┴──────┐
+    │  沙盒容器    │  mowen-sandbox:latest
+    │  (按需创建)  │  256MB / 最多3个 / 15min 超时
+    └─────────────┘
+```
+
+#### 一键部署
+
+```sh
+# 本地构建 -> 传到服务器 -> 启动
+chmod +x deploy/build-and-deploy.sh
+./deploy/build-and-deploy.sh 服务器IP
+```
+
+#### 手动部署
+
+```sh
+# 1. 构建镜像
+docker build -t mowen-app:latest -f Dockerfile.app .
+docker build -t mowen-sandbox:latest -f Dockerfile.sandbox .
+
+# 2. 启动
+docker compose up -d
+
+# 3. 访问
+curl http://localhost/api/health
+```
+
+#### 日常运维
+
+```sh
+docker compose logs -f          # 查看日志
+docker compose restart           # 重启
+docker exec -it mowen-app bash   # 进入容器调试
+```

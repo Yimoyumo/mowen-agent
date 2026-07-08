@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useSettings } from '@/composables/useSettings'
 import ModelSettings from '@/components/settings/ModelSettings.vue'
+import EmbeddingSettings from '@/components/settings/EmbeddingSettings.vue'
 import RetrievalSettings from '@/components/settings/RetrievalSettings.vue'
 import PersonaSettings from '@/components/settings/PersonaSettings.vue'
 import MemorySettings from '@/components/settings/MemorySettings.vue'
@@ -14,6 +15,7 @@ const {
   providers,
   profile,
   memories,
+  embeddingConfig,
   loading,
   saving,
   fetching,
@@ -23,6 +25,8 @@ const {
   handleSelectModel,
   handleAddProvider,
   handleDeleteProvider,
+  handleSetEmbeddingModel,
+  handleSetEmbeddingCustom,
   saveProfile,
   handleAddMemory,
   handleUpdateMemory,
@@ -84,6 +88,16 @@ function doAddProvider(name: string, baseUrl: string, apiKey: string, callback: 
             @fetch-models="doFetchModels"
             @add-provider="doAddProvider"
             @delete-provider="handleDeleteProvider"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="向量模型" name="embedding">
+          <EmbeddingSettings
+            v-if="embeddingConfig"
+            :config="embeddingConfig"
+            :saving="saving"
+            @set-model="handleSetEmbeddingModel"
+            @set-custom="handleSetEmbeddingCustom"
           />
         </el-tab-pane>
 

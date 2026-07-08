@@ -74,9 +74,23 @@ def resolve_embedding(config: RAGConfig) -> tuple[str, str, str]:
 def get_embeddings(config: RAGConfig | None = None):
     """获取嵌入模型实例。
 
-    自动解析 embedding 模型，优先使用配置的、其次从 chat 厂商找、最后遍历所有厂商。
+    优先级：
+    1. 自定义向量模型配置（embedding_custom.enabled）
+    2. 显式配置的 embedding_model（provider/model）
+    3. 从 chat 厂商查找 embedding 类模型
+    4. 遍历所有有 api_key 的厂商查找
     """
     config = config or RAGConfig.from_settings()
+
+    # 0. 自定义向量模型配置（独立 base_url / api_key / model）
+    custom = config.embedding_custom or {}
+    if custom.get("enabled") and custom.get("model") and custom.get("api_key"):
+        base_url = custom.get("base_url", "")
+        kwargs = {"api_key": custom["api_key"], "model": custom["model"]}
+        if base_url:
+            kwargs["base_url"] = base_url
+        logger.info("使用自定义向量模型: %s (base_url=%s)", custom["model"], base_url or "默认")
+        return OpenAIEmbeddings(**kwargs)
 
     try:
         provider, model, api_key = resolve_embedding(config)

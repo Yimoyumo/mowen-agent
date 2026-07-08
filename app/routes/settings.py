@@ -297,6 +297,109 @@ def test_provider_model(provider_id: str, body: dict) -> dict:
 
 # ==================== 用户画像 ====================
 
+@router.get("/settings/embedding")
+def get_embedding_config() -> dict:
+    """获取向量模型配置。
+
+    返回当前 embedding_model、自定义配置及所有厂商中可用的 embedding 模型列表。
+    """
+    settings = user_settings.load()
+    embedding_model = settings.get("embedding_model", "")
+    embedding_custom = settings.get("embedding_custom", {})
+    providers_config = settings.get("providers", {})
+
+    # 从所有厂商的模型列表中筛选 embedding 类模型
+    _EMBED_KEYWORDS = ["embedding", "text-embedding", "bge-", "e5-", "gte-"]
+    available = []
+    for pid, pdata in providers_config.items():
+        name = pdata.get("name", pid)
+        has_key = bool(pdata.get("api_key", ""))
+        for m in pdata.get("models", []):
+            ml = m.lower()
+            if any(kw in ml for kw in _EMBED_KEYWORDS):
+                available.append({
+                    "provider_id": pid,
+                    "provider_name": name,
+                    "model": m,
+                    "ref": f"{pid}/{m}",
+                    "has_api_key": has_key,
+                })
+
+    return {
+        "embedding_model": embedding_model,
+        "available_models": available,
+        "embedding_custom": {
+            "enabled": embedding_custom.get("enabled", False),
+            "base_url": embedding_custom.get("base_url", ""),
+            "api_key": embedding_custom.get("api_key", ""),
+            "model": embedding_custom.get("model", ""),
+            "has_api_key": bool(embedding_custom.get("api_key", "")),
+        },
+    }
+
+
+class EmbeddingModelUpdate(BaseModel):
+    """设置向量模型。"""
+    embedding_model: str = ""  # "provider/model" 或空字符串清除
+
+
+@router.put("/settings/embedding")
+def set_embedding_config(body: EmbeddingModelUpdate) -> dict:
+    """设置向量模型。
+
+    传入 "provider/model" 格式，或空字符串清除（系统将自动推断）。
+    """
+    model_ref = body.embedding_model.strip()
+
+    if model_ref and "/" not in model_ref:
+        raise ValidationError("模型格式必须为 provider/model")
+
+    settings = user_settings.load()
+    settings["embedding_model"] = model_ref
+    user_settings.save(settings)
+
+    if model_ref:
+        logger.info("向量模型已设置: %s", model_ref)
+    else:
+        logger.info("向量模型已清除，将自动推断")
+
+    return {"status": "ok", "embedding_model": model_ref}
+
+
+class EmbeddingCustomUpdate(BaseModel):
+    """更新自定义向量模型配置。"""
+    enabled: bool | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+
+
+@router.put("/settings/embedding/custom")
+def set_embedding_custom(body: EmbeddingCustomUpdate) -> dict:
+    """设置自定义向量模型配置。
+
+    独立配置 base_url / api_key / model，与厂商配置解耦。
+    启用后优先级高于 embedding_model 和自动推断。
+    """
+    settings = user_settings.load()
+    custom = settings.setdefault("embedding_custom", {})
+
+    if body.enabled is not None:
+        custom["enabled"] = body.enabled
+    if body.base_url is not None:
+        custom["base_url"] = body.base_url.strip()
+    if body.api_key is not None:
+        custom["api_key"] = body.api_key.strip()
+    if body.model is not None:
+        custom["model"] = body.model.strip()
+
+    settings["embedding_custom"] = custom
+    user_settings.save(settings)
+
+    logger.info("自定义向量模型配置已更新: enabled=%s model=%s", custom.get("enabled"), custom.get("model"))
+    return {"status": "ok", "embedding_custom": custom}
+
+
 @router.get("/settings/profile")
 def get_profile() -> dict:
     """获取用户画像。"""

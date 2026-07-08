@@ -19,6 +19,9 @@ import {
   updateMemory,
   deleteMemory,
   clearMemories,
+  getEmbeddingConfig,
+  setEmbeddingModel,
+  setEmbeddingCustom,
 } from '@/api/settingsApi'
 import type {
   UserSettings,
@@ -26,6 +29,7 @@ import type {
   ProviderInfo,
   UserProfile,
   MemoryItem,
+  EmbeddingConfig,
 } from '@/types/api'
 
 export function useSettings() {
@@ -33,6 +37,7 @@ export function useSettings() {
   const providers = ref<ProvidersResponse | null>(null)
   const profile = ref<UserProfile | null>(null)
   const memories = ref<MemoryItem[]>([])
+  const embeddingConfig = ref<EmbeddingConfig | null>(null)
   const loading = ref(false)
   const saving = ref(false)
   const fetching = ref(false)   // 正在拉取模型列表
@@ -40,16 +45,18 @@ export function useSettings() {
   async function loadAll() {
     loading.value = true
     try {
-      const [s, p, prof, mem] = await Promise.all([
+      const [s, p, prof, mem, embed] = await Promise.all([
         getSettings(),
         getProviders(),
         getProfile(),
         getMemories(),
+        getEmbeddingConfig(),
       ])
       settings.value = s
       providers.value = p
       profile.value = prof
       memories.value = mem.memories
+      embeddingConfig.value = embed
     } catch {
       ElMessage.error('加载设置失败')
     } finally {
@@ -70,6 +77,37 @@ export function useSettings() {
       providers.value = await getProviders()
     } catch {
       ElMessage.error('加载厂商列表失败')
+    }
+  }
+
+  async function handleSetEmbeddingModel(modelRef: string) {
+    saving.value = true
+    try {
+      await setEmbeddingModel(modelRef)
+      embeddingConfig.value = await getEmbeddingConfig()
+      ElMessage.success(modelRef ? '向量模型已设置' : '已切换为自动推断')
+    } catch {
+      ElMessage.error('设置失败')
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function handleSetEmbeddingCustom(config: {
+    enabled?: boolean
+    base_url?: string
+    api_key?: string
+    model?: string
+  }) {
+    saving.value = true
+    try {
+      await setEmbeddingCustom(config)
+      embeddingConfig.value = await getEmbeddingConfig()
+      ElMessage.success('自定义向量模型配置已保存')
+    } catch {
+      ElMessage.error('保存失败')
+    } finally {
+      saving.value = false
     }
   }
 
@@ -248,6 +286,7 @@ export function useSettings() {
     loading,
     saving,
     fetching,
+    embeddingConfig,
     loadAll,
     loadSettings,
     loadProviders,
@@ -258,6 +297,8 @@ export function useSettings() {
     handleSelectModel,
     handleAddProvider,
     handleDeleteProvider,
+    handleSetEmbeddingModel,
+    handleSetEmbeddingCustom,
     saveProfile,
     handleAddMemory,
     handleUpdateMemory,
