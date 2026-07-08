@@ -37,3 +37,10 @@ Thumbs.db
 *.log
 downloads/
 uploads/
+
+# ==================== MCP 浏览器产物 ====================
+.playwright-mcp/
+
+# ==================== 临时调试文件 ====================
+deepseek-api-docs.md
+page-content.yml
