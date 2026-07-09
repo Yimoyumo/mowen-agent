@@ -8,9 +8,11 @@
 - export_file: 将容器内文件导出到宿主机供用户下载
 """
 
+import io
 import os
 import shutil
 import subprocess
+import tarfile
 import threading
 import time
 import uuid
@@ -31,6 +33,7 @@ _DEFAULT_TIMEOUT = 60          # 默认命令超时（秒）
 
 _DOWNLOADS_DIR = Path("downloads")  # 文件导出目录
 _UPLOADS_DIR = Path("uploads")      # 用户上传暂存目录
+_SANDBOX_WORKSPACE_DIR = Path("data/sandbox_workspaces")  # 沙盒工作区持久化目录
 
 # 沙盒池配置
 _MAX_SANDBOXES = 3              # 2核4G 最多支撑 2-3 个并发沙盒
@@ -45,9 +48,10 @@ class Sandbox:
     所有工具调用共享同一个容器和文件系统。
     """
 
-    def __init__(self):
+    def __init__(self, session_id: str = ""):
         client = docker.from_env()
         self._client = client
+        self._session_id = session_id
 
         # 优先用预装工具的自建镜像，不存在则回退到 slim
         image = _SANDBOX_IMAGE
@@ -56,6 +60,10 @@ class Sandbox:
         except Exception as e:
             logger.warning("沙盒镜像 %s 不可用，回退到 python:3.12-slim: %s", image, e)
             image = "python:3.12-slim"
+
+        # 每个会话独立的 workspace 目录，容器重建后文件不丢失
+        workspace_dir = _SANDBOX_WORKSPACE_DIR.resolve() / (session_id or "default")
+        workspace_dir.mkdir(parents=True, exist_ok=True)
 
         self._container = client.containers.run(
             image=image,
@@ -67,6 +75,10 @@ class Sandbox:
             detach=True,
             remove=True,
             tty=True,
+            volumes={
+                # 挂载宿主机目录到 /workspace，容器重建后文件不丢失
+                str(workspace_dir): {"bind": "/workspace", "mode": "rw"},
+            },
         )
         # 初始化工作区
         self._container.exec_run("mkdir -p /workspace", user="root")
@@ -134,7 +146,10 @@ class Sandbox:
         return output
 
     def export_file(self, container_path: str) -> tuple[str, str] | None:
-        """将容器内文件导出到宿主机 downloads 目录。"""
+        """将容器内文件导出到宿主机 downloads 目录。
+
+        使用 Docker SDK get_archive 替代 docker cp CLI（容器内无 docker 命令）。
+        """
         resolved = _resolve_path(container_path)
         _DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -145,16 +160,25 @@ class Sandbox:
         dest_path = dest_dir / filename
 
         try:
-            cp_result = subprocess.run(
-                ["docker", "cp", f"{self._container.id}:{resolved}", str(dest_path)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if cp_result.returncode != 0:
-                logger.warning("docker cp 导出失败: container=%s path=%s stderr=%s",
-                               self.container_id, resolved, cp_result.stderr[:200])
+            # Docker SDK：从容器提取文件（返回 tar 流）
+            stream, stat = self._container.get_archive(resolved)
+            # 写入临时 tar 文件再解包
+            tar_bytes = b"".join(stream)
+            tar_io = io.BytesIO(tar_bytes)
+            with tarfile.open(fileobj=tar_io, mode="r") as tar:
+                tar.extractall(path=str(dest_dir))
+            # get_archive 解包后的文件名可能带路径，重命名为简单文件名
+            extracted = dest_dir / filename
+            if not extracted.exists():
+                # 解包后的文件可能在子目录中，查找实际文件
+                for f in dest_dir.rglob("*"):
+                    if f.is_file():
+                        f.rename(extracted)
+                        break
+            if not extracted.exists():
+                logger.warning("导出文件解包失败: container=%s path=%s", self.container_id, resolved)
                 return None
+            logger.info("文件已导出: %s -> %s", resolved, dest_path)
             return token, filename
         except Exception as exc:
             logger.error("导出文件异常: container=%s path=%s err=%s",
@@ -162,7 +186,10 @@ class Sandbox:
             return None
 
     def import_file(self, host_path: str, container_subpath: str | None = None) -> str | None:
-        """将宿主机文件导入沙盒容器。"""
+        """将宿主机文件导入沙盒容器。
+
+        使用 Docker SDK put_archive 替代 docker cp CLI。
+        """
         src = Path(host_path)
         if not src.is_file():
             return None
@@ -171,16 +198,16 @@ class Sandbox:
         dest = _resolve_path(f"/workspace/{filename}")
 
         try:
-            cp_result = subprocess.run(
-                ["docker", "cp", str(src), f"{self._container.id}:{dest}"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if cp_result.returncode != 0:
-                logger.warning("docker cp 导入失败: container=%s src=%s stderr=%s",
-                               self.container_id, src, cp_result.stderr[:200])
-                return None
+            # 构建 tar 包（Docker SDK put_archive 需要 tar 流）
+            tar_io = io.BytesIO()
+            with tarfile.open(fileobj=tar_io, mode="w") as tar:
+                tar.add(str(src), arcname=filename)
+            tar_io.seek(0)
+
+            # put_archive 的 path 是目标目录，文件名在 tar 内
+            dest_dir = str(Path(dest).parent)
+            self._container.put_archive(dest_dir, tar_io)
+            logger.info("文件已导入: %s -> %s", src, dest)
             return dest
         except Exception as exc:
             logger.error("导入文件异常: container=%s src=%s err=%s",
@@ -270,7 +297,7 @@ def get_or_create(session_id: str) -> Sandbox:
                 logger.warning("淘汰沙盒销毁失败: session=%s err=%s", oldest_id, exc)
             logger.warning("沙盒池已满，淘汰: session=%s", oldest_id)
 
-        sb = Sandbox()
+        sb = Sandbox(session_id=session_id)
         _sandbox_pool[session_id] = {
             "sandbox": sb,
             "last_active": time.time(),

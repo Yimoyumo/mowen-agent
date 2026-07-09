@@ -146,6 +146,7 @@ def build_vector_store_from_directory(
     dir_path: str | Path,
     collection_name: str = "default",
     kb_type: str = "general",
+    kb_id: str | None = None,
     config: RAGConfig | None = None,
 ) -> None:
     """从文档目录构建并保存向量库。"""
@@ -154,13 +155,14 @@ def build_vector_store_from_directory(
     documents = load_directory(dir_path)
     logger.info("共加载 %d 个文件", len(documents))
 
-    build_vector_store_from_documents(documents, collection_name, kb_type, config)
+    build_vector_store_from_documents(documents, collection_name, kb_type, kb_id, config)
 
 
 def build_vector_store_from_documents(
     documents: list[Document],
     collection_name: str = "default",
     kb_type: str = "general",
+    kb_id: str | None = None,
     config: RAGConfig | None = None,
 ) -> None:
     """从文档对象列表构建并保存向量库。"""
@@ -171,7 +173,7 @@ def build_vector_store_from_documents(
     logger.info("切分为 %d 个文本块", len(chunks))
 
     logger.info("正在构建 Chroma 向量库...")
-    create_vector_store(chunks, collection_name, config)
+    create_vector_store(chunks, collection_name, config, kb_id=kb_id)
     logger.info("向量库构建完成: %s/chroma/%s", config.vector_store_dir, collection_name)
 
 

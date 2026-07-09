@@ -6,15 +6,17 @@
 
 - **Agent 自主决策**：LLM 自动判断是否需要调用工具（知识库检索 / 联网搜索 / 沙盒执行）
 - **Docker 沙盒**：在隔离的 Linux 容器中执行代码、安装包、处理文件，支持文件上传/下载
-- **知识库 RAG**：上传文档后自动切分入库，回答时精准定位相关内容
+- **知识库 RAG**：上传文档后自动切分入库，回答时精准定位相关内容，支持 PDF / Word / TXT / Markdown
+- **向量维度保护**：自动检测 embedding 维度并记录，切换模型时校验，防止维度不匹配崩溃
+- **Docker 沙盒**：在隔离的 Linux 容器中执行代码、安装包、处理文件，支持文件上传/下载，workspace 持久化
 - **联网搜索**：通过 Tavily 实时搜索最新信息（需配置 API Key）
 - **网页抓取**：抓取指定 URL 的网页内容并转为 Markdown
-- **MCP 工具集成**：通过 Model Context Protocol 连接外部工具服务器
+- **MCP 工具集成**：通过 Model Context Protocol 连接外部工具服务器（文件系统 / Playwright 浏览器 / GitHub 搜索）
 - **Skills 技能系统**：Markdown 格式的可扩展场景指导，Agent 按需参考
 - **长期记忆**：SQLite 持久化记忆，自动提取用户事实/偏好/对话摘要
 - **模型上下文窗口**：内置 50+ 模型官方上下文数据，支持按模型覆盖
 - **实时 Token 统计**：流式对话中实时显示输入/输出 token 用量与进度条
-- **多厂商切换**：DeepSeek / 智谱 AI / Kimi / 硅基流动，设置页面可视化管理
+- **多厂商切换**：DeepSeek / 智谱 AI / Kimi / 硅基流动，全部走 OpenAI 兼容接口
 - **人格设定**：可自定义 Agent 性格与回答风格（如猫娘助手）
 - **流式输出**：逐 token 输出，支持展示推理过程（DeepSeek 思考链）
 - **工具调用可视化**：前端实时显示工具调用状态和结果
@@ -24,8 +26,9 @@
 - **设置页面**：可视化管理厂商 API Key、模型选择、向量模型、人设、用户画像、记忆、MCP
 - **定时任务**：APScheduler 定时执行 Agent 任务，支持 cron/间隔/单次触发，前端可视化管理
 - **MCP 浏览器**：@playwright/mcp 集成，Agent 可浏览网页、截图、点击交互
-- **网页抓取**：抓取指定 URL 的网页内容并转为 Markdown，可选抓取图片
+- **MCP 文件导出**：浏览器截图/PDF 等文件可导入沙盒再导出给用户下载
 - **测试覆盖**：pytest 187 个测试用例覆盖核心模块
+- **Docker 一键部署**：多阶段构建（前端+后端+Nginx），docker compose up 即可运行
 
 ## 架构
 
@@ -56,10 +59,10 @@
 |---|---|
 | 前端 | Vue 3 + TypeScript + Vite + Element Plus |
 | Agent 框架 | LangGraph (ReAct) + create_react_agent |
-| LLM | DeepSeek / 智谱 AI（可切换，注册表模式） |
-| Embedding | 智谱 AI embedding-3 / 可自定义 |
-| 向量库 | Chroma |
-| 沙盒 | Docker SDK for Python（mowen-sandbox 自建镜像） |
+| LLM | DeepSeek / 智谱 AI / Kimi / 硅基流动（全部 OpenAI 兼容接口） |
+| Embedding | OpenAI 兼容（BGE / Qwen3-Embedding / 智谱等，自动排除 VL 视觉模型） |
+| 向量库 | ChromaDB（维度自动检测与校验） |
+| 沙盒 | Docker SDK for Python（mowen-sandbox 自建镜像，workspace 持久化） |
 | MCP | langchain-mcp-adapters + @playwright/mcp |
 | 定时任务 | APScheduler (AsyncIOScheduler + SQLite) |
 | API | FastAPI + SSE 流式 |
@@ -139,7 +142,7 @@ docker compose up -d
 │   │   ├── provider_config.py      厂商预设配置
 │   │   └── model_context.py        模型上下文窗口映射（50+ 模型官方数据）
 │   ├── rag/                    RAG 管线层
-│   │   ├── loader.py               文档加载
+│   │   ├── loader.py               文档加载（TXT/MD/PDF/Word/CSV/JSON）
 │   │   ├── splitter.py             文档切分
 │   │   ├── vectorstore.py          Chroma 向量库
 │   │   ├── knowledge_base.py       知识库元数据管理
@@ -154,7 +157,7 @@ docker compose up -d
 │   │   └── query_expansion.py      查询扩写
 │   └── agent/                  Agent 子包
 │       ├── graph.py                LangGraph ReAct Agent
-│       ├── tools.py                14 个工具（搜索/沙盒/网页抓取/技能/MCP导出）
+│       ├── tools.py                16 个工具（搜索/沙盒/网页抓取/技能/MCP导出）
 │       ├── sandbox.py               Docker 沙盒管理器
 │       ├── mcp.py                   MCP 客户端（逐服务器容错）
 │       ├── memory.py                长期记忆（提取 + 存储 + 检索）

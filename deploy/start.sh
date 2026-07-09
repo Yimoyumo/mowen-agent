@@ -14,7 +14,7 @@ nginx -g 'daemon off;' &
 # 启动 Uvicorn
 echo "[2/2] 启动 Uvicorn (FastAPI)..."
 cd /app
-exec uvicorn api:app \
+exec python3 -m uvicorn api:app \
     --host 127.0.0.1 \
     --port 8000 \
     --workers 1 \

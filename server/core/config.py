@@ -39,7 +39,6 @@ class RAGConfig:
     skills: list = field(default_factory=list)
     logging: dict = field(default_factory=dict)
     deepseek_api_key: str = ""
-    zhipu_api_key: str = ""
 
     @property
     def chat_provider(self) -> str:
@@ -67,11 +66,11 @@ class RAGConfig:
             k = self.providers[ep].get("api_key", "")
             if k:
                 return k
-        for fid in ("zhipuai", "deepseek"):
-            if fid in self.providers:
-                k = self.providers[fid].get("api_key", "")
-                if k:
-                    return k
+        # 兜底：遍历所有有 api_key 的厂商
+        for pid, pdata in self.providers.items():
+            k = pdata.get("api_key", "")
+            if k:
+                return k
         return None
 
     def get_provider_base_url(self, pid: str = "") -> str:

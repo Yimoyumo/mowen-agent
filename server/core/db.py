@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     description     TEXT DEFAULT '',
     kb_type         TEXT DEFAULT 'general',
     collection_name TEXT NOT NULL,
+    embedding_model TEXT DEFAULT '',
+    embedding_dim   INTEGER DEFAULT 0,
     created_at      TEXT NOT NULL
 );
 
@@ -133,6 +135,9 @@ class Database:
         conn.executescript(_SCHEMA)
         conn.commit()
 
+        # 迁移：为新字段补齐列（兼容旧数据库）
+        self._migrate_schema_v1(conn)
+
         # 从 JSON 迁移旧数据
         self._migrate_from_json()
 
@@ -188,6 +193,17 @@ class Database:
             self._local.conn = None
 
     # ==================== 迁移 ====================
+
+    def _migrate_schema_v1(self, conn: sqlite3.Connection) -> None:
+        """v1 schema 迁移：为旧数据库补齐 embedding_model, embedding_dim 列。"""
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge_bases)")}
+        if "embedding_model" not in cols:
+            conn.execute("ALTER TABLE knowledge_bases ADD COLUMN embedding_model TEXT DEFAULT ''")
+        if "embedding_dim" not in cols:
+            conn.execute("ALTER TABLE knowledge_bases ADD COLUMN embedding_dim INTEGER DEFAULT 0")
+        if "embedding_model" not in cols or "embedding_dim" not in cols:
+            conn.commit()
+            logger.info("数据库 schema 已升级至 v1（新增 embedding 维度字段）")
 
     def _migrate_from_json(self) -> None:
         """从 knowledge_bases.json 迁移旧数据到 SQLite。

@@ -52,6 +52,8 @@ def list_knowledge_bases() -> list[KnowledgeBaseResponse]:
             description=kb.description,
             created_at=kb.created_at,
             kb_type=kb.kb_type,
+            embedding_model=kb.embedding_model,
+            embedding_dim=kb.embedding_dim,
         )
         for kb in kbs
     ]
@@ -89,6 +91,8 @@ def create_kb_endpoint(request: CreateKnowledgeBaseRequest) -> KnowledgeBaseResp
         description=kb.description,
         created_at=kb.created_at,
         kb_type=kb.kb_type,
+        embedding_model=kb.embedding_model,
+        embedding_dim=kb.embedding_dim,
     )
 
 
@@ -163,7 +167,7 @@ def build_kb_endpoint(kb_id: str) -> dict:
         raise NotFoundError("知识库不存在")
 
     try:
-        build_vector_store_from_directory("./data", kb.collection_name, kb.kb_type)
+        build_vector_store_from_directory("./data", kb.collection_name, kb.kb_type, kb_id=kb.id)
     except Exception as exc:
         raise InternalError("构建知识库失败", detail=str(exc)) from exc
 
@@ -178,7 +182,7 @@ def upload_kb_endpoint(
 ) -> dict:
     """上传文档到指定知识库。
 
-    支持格式：.txt .md .json .csv
+    支持格式：.txt .md .json .csv .pdf .docx .doc
     默认追加文档；reset=true 时清空后重建。
     """
     kb = get_knowledge_base(kb_id)
@@ -194,10 +198,10 @@ def upload_kb_endpoint(
         raise ValidationError("文件名不合法")
 
     # 校验文件类型
-    allowed_suffixes = {".txt", ".md", ".json", ".csv"}
+    allowed_suffixes = {".txt", ".md", ".json", ".csv", ".pdf", ".docx", ".doc"}
     suffix = Path(safe_filename).suffix.lower()
     if suffix not in allowed_suffixes:
-        raise ValidationError(f"不支持的文件类型: {suffix}，仅支持 {', '.join(allowed_suffixes)}")
+        raise ValidationError(f"不支持的文件类型: {suffix}，仅支持 {', '.join(sorted(allowed_suffixes))}")
 
     # 保存到临时目录，处理完后自动清理
     temp_dir = Path(tempfile.mkdtemp(prefix="upload_"))
@@ -222,7 +226,7 @@ def upload_kb_endpoint(
         documents = load_documents(temp_path)
         if reset:
             # 清空重建
-            build_vector_store_from_documents(documents, kb.collection_name, kb.kb_type)
+            build_vector_store_from_documents(documents, kb.collection_name, kb.kb_type, kb_id=kb.id)
             message = f"已上传 {safe_filename} 并重建知识库 {kb.name}"
         else:
             # 追加到已有向量库

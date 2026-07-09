@@ -35,6 +35,8 @@ class KnowledgeBaseResponse(BaseModel):
     description: str
     created_at: str                 # ISO 格式时间戳
     kb_type: str                    # novel/tech/project/general
+    embedding_model: str = ""       # 创建时使用的 embedding 模型
+    embedding_dim: int = 0          # 向量维度
 
 
 class KnowledgeBaseDocumentInfo(BaseModel):
@@ -54,7 +56,7 @@ class KnowledgeBaseDocumentsResponse(BaseModel):
 
 class ConfigResponse(BaseModel):
     """系统配置响应（只读）。"""
-    chat_provider: str               # 对话模型厂商：deepseek / zhipuai
+    chat_provider: str               # 对话模型厂商：deepseek / zhipuai / 自定义
     chat_model: str                 # 对话模型名称
     embedding_model: str            # 向量模型名称
     top_k: int                      # 检索返回的文档数

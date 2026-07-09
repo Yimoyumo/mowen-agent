@@ -92,7 +92,6 @@ def _parse_models(data: dict) -> list[str]:
     """解析 /models 返回的 JSON，提取模型 ID 列表。
 
     支持 OpenAI 兼容格式：{"data": [{"id": "gpt-4"}, ...]}
-    也支持智谱格式：{"data": [{"id": "glm-4-flash"}, ...]}
     """
     items = data.get("data", [])
     if not isinstance(items, list):

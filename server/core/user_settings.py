@@ -186,7 +186,6 @@ def build_config(settings: dict):
         skills=settings.get("skills", []),
         logging=settings.get("logging", {}),
         deepseek_api_key=prov.get("deepseek", {}).get("api_key", ""),
-        zhipu_api_key=prov.get("zhipuai", {}).get("api_key", ""),
     )
 
 

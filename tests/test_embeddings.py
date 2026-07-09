@@ -182,13 +182,17 @@ class TestGetEmbeddingsCustom:
                                     "models": ["embedding-3"]}},
         )
 
-        with patch("server.llm.embeddings.ZhipuAIEmbeddings") as mock_cls:
+        with patch("server.llm.embeddings.OpenAIEmbeddings") as mock_cls:
             mock_instance = MagicMock()
             mock_cls.return_value = mock_instance
             from server.llm.embeddings import get_embeddings
             result = get_embeddings(cfg)
             assert result is mock_instance
-            mock_cls.assert_called_once_with(api_key="sk-456", model="embedding-3")
+            mock_cls.assert_called_once_with(
+                api_key="sk-456",
+                model="embedding-3",
+                base_url="https://open.bigmodel.cn/api/paas/v4",
+            )
 
     def test_custom_no_model_disabled(self):
         """自定义配置 enabled 但 model 为空时不生效。"""
@@ -201,9 +205,14 @@ class TestGetEmbeddingsCustom:
                                     "models": ["embedding-3"]}},
         )
 
-        with patch("server.llm.embeddings.ZhipuAIEmbeddings") as mock_cls:
+        with patch("server.llm.embeddings.OpenAIEmbeddings") as mock_cls:
             mock_instance = MagicMock()
             mock_cls.return_value = mock_instance
             from server.llm.embeddings import get_embeddings
             result = get_embeddings(cfg)
             assert result is mock_instance
+            mock_cls.assert_called_once_with(
+                api_key="sk-456",
+                model="embedding-3",
+                base_url="https://open.bigmodel.cn/api/paas/v4",
+            )

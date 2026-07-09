@@ -1,12 +1,11 @@
 """嵌入模型模块。
 
 智能解析 embedding 模型：
-1. 如果 configuration embedding_model 已设置（如 "zhipuai/embedding-3"），直接使用
+1. 如果 configuration embedding_model 已设置（如 "siliconflow/bge-large-zh"），直接使用
 2. 否则从 chat 厂商的 models 中查找 embedding 类模型
 3. 找不到则报错，提示用户配置
 """
 
-from langchain_community.embeddings import ZhipuAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from server.core.config import RAGConfig, _split_model_ref
@@ -16,13 +15,15 @@ logger = get_logger(__name__)
 
 # embedding 模型名称关键词
 _EMBED_KEYWORDS = ["embedding", "text-embedding", "bge-", "e5-", "gte-"]
+# 排除视觉嵌入模型（它们需要图片输入，不接受纯文本）
+_EMBED_EXCLUDE = ["vl-embedding", "vl-", "vision-embedding", "multimodal-embedding"]
 
 
 def _find_embedding_model(provider_models: list[str]) -> str | None:
-    """从厂商模型列表中找第一个 embedding 模型。"""
+    """从厂商模型列表中找第一个纯文本 embedding 模型。"""
     for m in provider_models:
         ml = m.lower()
-        if any(kw in ml for kw in _EMBED_KEYWORDS):
+        if any(kw in ml for kw in _EMBED_KEYWORDS) and not any(ex in ml for ex in _EMBED_EXCLUDE):
             return m
     return None
 
@@ -67,7 +68,7 @@ def resolve_embedding(config: RAGConfig) -> tuple[str, str, str]:
 
     raise ValueError(
         "未找到可用的 Embedding 模型。请在设置中为至少一个厂商填写 API Key 并确保其模型列表中有 embedding 类模型"
-        "（如 zhipuai/embedding-3、deepseek/text-embedding 等），然后在设置中指定 embedding_model。"
+        "（如 zhipuai/embedding-3、siliconflow/bge-large-zh 等），然后在设置中指定 embedding_model。"
     )
 
 
@@ -97,13 +98,29 @@ def get_embeddings(config: RAGConfig | None = None):
     except ValueError:
         raise
 
-    # 智谱用专用类
-    if provider == "zhipuai":
-        return ZhipuAIEmbeddings(api_key=api_key, model=model)
-
-    # 其他厂商用 OpenAI 兼容
+    # 所有厂商（含智谱）统一用 OpenAI 兼容接口
     base_url = config.providers.get(provider, {}).get("base_url", "")
     kwargs = {"api_key": api_key, "model": model}
     if base_url:
         kwargs["base_url"] = base_url
     return OpenAIEmbeddings(**kwargs)
+
+
+def get_embedding_dim(embeddings) -> int:
+    """通过实际调用 embedding 模型来获取向量维度。
+
+    用一条简短测试文本调用 embed_query，返回结果向量的维度。
+    失败时返回 0。
+
+    Args:
+        embeddings: LangChain embedding 实例（OpenAIEmbeddings 等）
+
+    Returns:
+        向量维度，失败返回 0
+    """
+    try:
+        vec = embeddings.embed_query("dim check")
+        return len(vec)
+    except Exception as e:
+        logger.warning("无法检测 embedding 维度: %s", e)
+        return 0

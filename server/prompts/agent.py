@@ -110,6 +110,7 @@ _SANDBOX = """## 沙盒说明
 - **文件操作工具没有硬性路径限制**：write_file / read_file / list_files / export_file 可以访问任意路径，但建议将工作文件放在 `/workspace/` 下以便管理
 - **相对路径默认基于 /workspace**：写 `"test.py"` 等同于 `/workspace/test.py`，写绝对路径则按绝对路径操作
 - **文件不会自动保存到宿主机**：只有在调用 sandbox_export_file 后，文件才会复制到用户可下载的位置
+- **下载链接是相对路径**：sandbox_export_file 返回的链接格式为 `/api/download/xxx/文件名`，**必须原样发给用户**，不要自己拼接域名（如 https://xxx.com），相对路径会自动适配当前访问域名
 - **不要长期阻塞**：避免运行 `tail -f`、`while true` 等阻塞命令，它们会卡住直到超时
 - **避免大规模下载**：不要在沙盒中下载大文件（>100MB），容器磁盘空间有限
 - **安装包后即时使用**：pip 安装的包仅存在于当前会话的容器中，切换会话后需要重新安装"""

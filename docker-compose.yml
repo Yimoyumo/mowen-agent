@@ -25,9 +25,16 @@ services:
       resources:
         limits:
           memory: 2G
+    # 加入已有外部网络（npm_default）
+    networks:
+      - npm_default
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+networks:
+  npm_default:
+    external: true

@@ -33,33 +33,34 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
 
 WORKDIR /app
 
-# 先装依赖（利用缓存）
+# 先装依赖（只用直接依赖，传递依赖由 pip 自动解决）
 COPY pyproject.toml uv.lock ./
-# 阿里云镜像 + 多次重试应对网络不稳定
-RUN for i in 1 2 3 4 5; do \
-        pip install --no-cache-dir --default-timeout=300 uv && break || \
-        echo "uv 安装重试 $i/5..." && sleep 3; \
-    done && \
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
+    pip config set global.trusted-host mirrors.aliyun.com && \
     for i in 1 2 3 4 5; do \
-        uv pip install --system --no-cache \
-        --index-url https://mirrors.aliyun.com/pypi/simple \
-        --default-timeout=300 \
-        "langchain==1.3.11" "langchain-core==1.4.8" "langchain-community==0.3.31" \
-        "langchain-classic==1.0.8" "langchain-text-splitters==1.1.2" \
-        "faiss-cpu==1.14.3" "langchain-chroma==1.1.0" "chromadb==1.5.9" \
-        "zhipuai==2.1.5.20250825" "httpx==0.28.1" "httpx-sse==0.4.3" \
-        "pyjwt==2.13.0" "cachetools==7.1.4" \
-        "fastapi==0.139.0" "uvicorn==0.49.0" \
-        "langchain-deepseek==1.1.0" "langgraph==1.2.7" \
-        "tavily-python==0.7.26" "python-multipart==0.0.32" \
-        "docker==7.1.0" "langchain-mcp-adapters==0.3.0" "mcp==1.28.1" \
-        "langchain-openai==1.3.3" "apscheduler==3.11.3" && break || \
-        echo "依赖安装重试 $i/5..." && sleep 5; \
-    done
+        pip install --no-cache-dir --default-timeout=300 \
+        "langchain>=1.3" "langchain-community>=0.3" \
+        "langchain-classic>=1.0" "langchain-text-splitters>=1.1" \
+        "langchain-chroma>=1.1" "chromadb>=1.5" \
+        "pypdf>=5.0" "python-docx>=1.1" \
+        "httpx>=0.28" \
+        "fastapi>=0.139" "uvicorn>=0.49" \
+        "langchain-deepseek>=1.1" "langgraph>=1.2" \
+        "tavily-python>=0.7" "python-multipart>=0.0" \
+        "docker>=7.1" "langchain-mcp-adapters>=0.3" "mcp>=1.28" \
+        "langchain-openai>=1.3" "apscheduler>=3.11" && break || \
+        echo "pip 安装重试 $i/5..." && sleep 5; \
+    done && \
+    python3 -c "import uvicorn, fastapi, langchain, langgraph; print('依赖验证通过')"
 
 # 安装 Playwright Chromium（@playwright/mcp 需要）
-# 用淘宝镜像加速下载，只装 chromium
-RUN npx -y playwright@latest install --with-deps chromium
+# npm 用淘宝镜像，浏览器从官方 CDN 下载（淘宝镜像不含 Chrome for Testing）
+RUN npm install -g @playwright/mcp && \
+    for i in 1 2 3; do \
+        unset PLAYWRIGHT_DOWNLOAD_HOST && \
+        npx @playwright/mcp install-browser chrome-for-testing && break || \
+        echo "Playwright 安装重试 $i/3..." && sleep 5; \
+    done
 
 # 复制项目代码
 COPY . .

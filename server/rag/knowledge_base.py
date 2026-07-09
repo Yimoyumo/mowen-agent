@@ -43,6 +43,8 @@ class KnowledgeBase:
     created_at: str      # 创建时间（ISO 格式）
     collection_name: str # Chroma collection 名称（由 id 派生）
     kb_type: str = DEFAULT_KB_TYPE  # novel/tech/project/general
+    embedding_model: str = ""  # 创建时使用的 embedding 模型（provider/model）
+    embedding_dim: int = 0     # 创建时的向量维度
 
 
 def _sanitize_collection_name(kb_id: str) -> str:
@@ -61,6 +63,8 @@ def load_knowledge_bases(config: RAGConfig | None = None) -> list[KnowledgeBase]
             created_at=row["created_at"],
             collection_name=row["collection_name"],
             kb_type=row["kb_type"],
+            embedding_model=row["embedding_model"] if "embedding_model" in row.keys() else "",
+            embedding_dim=row["embedding_dim"] if "embedding_dim" in row.keys() else 0,
         )
         for row in rows
     ]
@@ -89,9 +93,9 @@ def create_knowledge_base(
 
     db.execute(
         """INSERT INTO knowledge_bases
-           (id, name, description, kb_type, collection_name, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (kb.id, kb.name, kb.description, kb.kb_type, kb.collection_name, kb.created_at),
+           (id, name, description, kb_type, collection_name, embedding_model, embedding_dim, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (kb.id, kb.name, kb.description, kb.kb_type, kb.collection_name, kb.embedding_model, kb.embedding_dim, kb.created_at),
     )
     db.commit()
 
@@ -119,6 +123,8 @@ def get_knowledge_base(
         created_at=row["created_at"],
         collection_name=row["collection_name"],
         kb_type=row["kb_type"],
+        embedding_model=row["embedding_model"] if "embedding_model" in row.keys() else "",
+        embedding_dim=row["embedding_dim"] if "embedding_dim" in row.keys() else 0,
     )
 
 
@@ -140,6 +146,19 @@ def delete_knowledge_base(kb_id: str, config: RAGConfig | None = None) -> bool:
 
     logger.info("知识库已删除: %s (%s)", kb.name, kb.id)
     return True
+
+
+def update_knowledge_base_embedding(
+    kb_id: str,
+    embedding_model: str,
+    embedding_dim: int,
+) -> None:
+    """更新知识库的 embedding 模型和维度信息。"""
+    db.execute(
+        "UPDATE knowledge_bases SET embedding_model = ?, embedding_dim = ? WHERE id = ?",
+        (embedding_model, embedding_dim, kb_id),
+    )
+    db.commit()
 
 
 def ensure_default_knowledge_base(config: RAGConfig | None = None) -> KnowledgeBase:

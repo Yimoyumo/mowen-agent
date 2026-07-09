@@ -1,14 +1,16 @@
 """大语言模型模块。
 
 从 config.providers 获取厂商 API Key / base_url，构建 Chat 模型。
-预设厂商（deepseek/zhipuai）用专用 LangChain 类，其他用 ChatOpenAI 通用适配。
+DeepSeek 用专用 ChatDeepSeek 类，其他厂商（含智谱）一律用 ChatOpenAI 通用适配。
 """
 
-from langchain_community.chat_models import ChatZhipuAI
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 
 from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _providers: dict[str, callable] = {}
 
@@ -48,17 +50,11 @@ def _build_deepseek(config: RAGConfig):
     return ChatDeepSeek(api_key=api_key, **_build_kwargs(config))
 
 
-@register_provider("zhipuai")
-def _build_zhipuai(config: RAGConfig):
-    api_key = config.zhipu_api_key or config.get_active_api_key()
-    return ChatZhipuAI(api_key=api_key, **_build_kwargs(config))
-
-
 def get_chat_model(config: RAGConfig | None = None):
     """根据配置获取聊天模型实例。
 
-    预设厂商走注册表（DeepSeek → ChatDeepSeek, 智谱 → ChatZhipuAI），
-    自定义厂商用 ChatOpenAI + config.providers 中的 base_url / api_key。
+    DeepSeek 走注册表专用类，其他厂商（含智谱）用 ChatOpenAI +
+    config.providers 中的 base_url / api_key 通用适配。
     """
     config = config or RAGConfig.from_settings()
 
@@ -66,7 +62,7 @@ def get_chat_model(config: RAGConfig | None = None):
     if builder is not None:
         return builder(config)
 
-    # 自定义厂商：从 providers 获取 api_key + base_url
+    # 其他厂商：从 providers 获取 api_key + base_url
     prov = config.providers.get(config.chat_provider, {})
     api_key = prov.get("api_key", "")
     base_url = prov.get("base_url", "")

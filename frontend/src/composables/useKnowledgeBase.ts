@@ -115,7 +115,7 @@ export function useKnowledgeBaseManager() {
 
   async function handleUpload(kbId: string, file: File) {
     const suffix = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-    const allowed = ['.txt', '.md', '.json', '.csv']
+    const allowed = ['.txt', '.md', '.json', '.csv', '.pdf', '.docx', '.doc']
     if (!allowed.includes(suffix)) {
       ElMessage.warning(`仅支持 ${allowed.join(' / ')} 文件`)
       return

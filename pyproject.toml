@@ -15,7 +15,8 @@ dependencies = [
     "faiss-cpu==1.14.3",
     "langchain-chroma==1.1.0",
     "chromadb==1.5.9",
-    "zhipuai==2.1.5.20250825",
+    "pypdf==5.8.0",
+    "python-docx==1.2.0",
     "httpx==0.28.1",
     "httpx-sse==0.4.3",
     "pyjwt==2.13.0",
@@ -41,10 +42,6 @@ dev = [
 ]
 
 [tool.uv]
-# 强制覆盖 zhipuai 的 pyjwt<2.9 约束（实际兼容 pyjwt 2.13）
-override-dependencies = ["pyjwt>=2.10.1"]
-
-[tool.uv.pip]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [tool.pytest.ini_options]

@@ -222,7 +222,7 @@ watch(
     <input
       ref="fileInput"
       type="file"
-      accept=".txt,.md,.json,.csv"
+      accept=".txt,.md,.json,.csv,.pdf,.docx,.doc"
       class="hidden-file-input"
       @change="handleFileChange"
     />
