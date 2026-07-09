@@ -84,28 +84,72 @@ def search_web(query: str, max_results: int = 5, search_depth: str = "basic") ->
     不适用场景：已上传知识库中的内容——这类问题请用 search_knowledge_base。"""
     config = _current_config.get()
 
-    if not config.tavily_api_key:
-        return "（联网搜索功能未配置 API Key，请联系管理员设置 tavily_api_key）"
-
     # 参数边界保护
     max_results = max(1, min(10, max_results))
     if search_depth not in ("basic", "advanced"):
         search_depth = "basic"
 
+    # 有 Tavily API Key -> 用 Tavily
+    if config.tavily_api_key:
+        try:
+            client = TavilyClient(api_key=config.tavily_api_key)
+            result = client.search(query, search_depth=search_depth, max_results=max_results)
+            if result.get("results"):
+                return "\n\n".join(
+                    f"【{r['title']}】({r['url']})\n{r['content']}"
+                    for r in result["results"]
+                )
+        except Exception as exc:
+            logger.warning("Tavily 搜索失败，降级到 Bing: query=%s err=%s", query, exc)
+
+    # 降级方案：抓取 Bing 搜索结果
+    return _bing_search(query, max_results)
+
+
+def _bing_search(query: str, max_results: int = 5) -> str:
+    """无 Tavily API Key 时的降级方案：抓取 Bing 搜索结果页。"""
+    from urllib.parse import quote_plus
+    import httpx
+    from bs4 import BeautifulSoup
+
+    url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+
     try:
-        client = TavilyClient(api_key=config.tavily_api_key)
-        result = client.search(query, search_depth=search_depth, max_results=max_results)
+        resp = httpx.get(url, headers=headers, timeout=15, follow_redirects=True)
+        resp.raise_for_status()
     except Exception as exc:
-        logger.warning("联网搜索失败: query=%s err=%s", query, exc)
+        logger.warning("Bing 搜索失败: query=%s err=%s", query, exc)
         return f"（搜索失败: {exc}）"
 
-    if not result.get("results"):
+    soup = BeautifulSoup(resp.text, "html.parser")
+    results = []
+
+    # Bing 搜索结果在 <li class="b_algo"> 中
+    for item in soup.select("li.b_algo")[:max_results]:
+        title_tag = item.select_one("h2 a")
+        if not title_tag:
+            continue
+        title = title_tag.get_text(strip=True)
+        link = title_tag.get("href", "")
+
+        # 摘要在 <p> 或 .b_caption p 中
+        snippet = ""
+        snippet_tag = item.select_one(".b_caption p") or item.select_one("p")
+        if snippet_tag:
+            snippet = snippet_tag.get_text(strip=True)
+
+        if title and link:
+            results.append(f"【{title}】({link})\n{snippet}")
+
+    if not results:
         return "（未找到相关搜索结果）"
 
-    return "\n\n".join(
-        f"【{r['title']}】({r['url']})\n{r['content']}"
-        for r in result["results"]
-    )
+    logger.info("Bing 降级搜索完成: query=%s results=%d", query, len(results))
+    return "\n\n".join(results)
 
 
 @tool

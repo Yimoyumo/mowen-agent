@@ -22,6 +22,8 @@ import {
   getEmbeddingConfig,
   setEmbeddingModel,
   setEmbeddingCustom,
+  getAgentSettings,
+  updateAgentSettings,
 } from '@/api/settingsApi'
 import type {
   UserSettings,
@@ -38,6 +40,7 @@ export function useSettings() {
   const profile = ref<UserProfile | null>(null)
   const memories = ref<MemoryItem[]>([])
   const embeddingConfig = ref<EmbeddingConfig | null>(null)
+  const agentSettings = ref<{ tavily_api_key: string }>({ tavily_api_key: '' })
   const loading = ref(false)
   const saving = ref(false)
   const fetching = ref(false)   // 正在拉取模型列表
@@ -45,18 +48,20 @@ export function useSettings() {
   async function loadAll() {
     loading.value = true
     try {
-      const [s, p, prof, mem, embed] = await Promise.all([
+      const [s, p, prof, mem, embed, agent] = await Promise.all([
         getSettings(),
         getProviders(),
         getProfile(),
         getMemories(),
         getEmbeddingConfig(),
+        getAgentSettings(),
       ])
       settings.value = s
       providers.value = p
       profile.value = prof
       memories.value = mem.memories
       embeddingConfig.value = embed
+      agentSettings.value = agent
     } catch {
       ElMessage.error('加载设置失败')
     } finally {
@@ -266,6 +271,19 @@ export function useSettings() {
     }
   }
 
+  async function handleSaveAgentSettings(tavilyApiKey: string) {
+    saving.value = true
+    try {
+      await updateAgentSettings(tavilyApiKey)
+      agentSettings.value = { tavily_api_key: tavilyApiKey }
+      ElMessage.success('Agent 工具配置已保存')
+    } catch {
+      ElMessage.error('保存失败')
+    } finally {
+      saving.value = false
+    }
+  }
+
   async function handleReset() {
     try {
       const defaults = await resetSettings()
@@ -299,6 +317,8 @@ export function useSettings() {
     handleDeleteProvider,
     handleSetEmbeddingModel,
     handleSetEmbeddingCustom,
+    agentSettings,
+    handleSaveAgentSettings,
     saveProfile,
     handleAddMemory,
     handleUpdateMemory,

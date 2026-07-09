@@ -214,3 +214,18 @@ export async function testMcpServers(): Promise<Record<string, McpTestResult>> {
   const { data } = await apiClient.post<{ results: Record<string, McpTestResult> }>('/settings/mcp-servers/test')
   return data.results
 }
+
+// ==================== Agent 工具配置 ====================
+
+export interface AgentSettings {
+  tavily_api_key: string
+}
+
+export async function getAgentSettings(): Promise<AgentSettings> {
+  const { data } = await apiClient.get<AgentSettings>('/settings/agent')
+  return data
+}
+
+export async function updateAgentSettings(tavilyApiKey: string): Promise<void> {
+  await apiClient.put('/settings/agent', { tavily_api_key: tavilyApiKey })
+}

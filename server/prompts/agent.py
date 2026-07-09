@@ -50,8 +50,7 @@ _TOOLS = """## 你的能力
 7. **search_knowledge_base** — 搜索用户上传的知识库
 8. **search_web** — 联网搜索最新信息（可调参数）
     - 参数：query（关键词）、max_results（1-10，默认5）、search_depth（"basic"/"advanced"）
-    - 简单查询用 max_results=3；深度调研用 max_results=8 + search_depth="advanced"
-    - 局限：只返回搜索结果摘要，需用 fetch_webpage 获取全文；某些网站可能被搜索引擎屏蔽
+    - 简单查询用 max_results=3；深度调研用 max_results=8 + search_depth="advanced"    - 已配置 Tavily API Key 时使用 Tavily（结果更精准）；未配置时自动降级为 Bing 搜索    - 局限：只返回搜索结果摘要，需用 fetch_webpage 获取全文；某些网站可能被搜索引擎屏蔽
 9. **fetch_webpage** - 抓取指定网址的网页内容（HTML 转为 Markdown 文本），可选抓取图片
     - 参数：url（网址）、include_images（是否同时下载页面图片，默认 False）
     - include_images=False（默认）：仅抓取文本，速度快，适合读文章/文档

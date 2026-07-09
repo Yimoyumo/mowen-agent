@@ -400,6 +400,35 @@ def set_embedding_custom(body: EmbeddingCustomUpdate) -> dict:
     return {"status": "ok", "embedding_custom": custom}
 
 
+# ==================== Agent 工具配置 ====================
+
+class AgentSettingsUpdate(BaseModel):
+    """Agent 工具配置更新。"""
+    tavily_api_key: str = ""
+
+
+@router.get("/settings/agent")
+def get_agent_settings() -> dict:
+    """获取 Agent 工具配置（Tavily API Key 等）。"""
+    settings = user_settings.load()
+    agent = settings.get("agent", {})
+    return {
+        "tavily_api_key": agent.get("tavily_api_key", ""),
+    }
+
+
+@router.put("/settings/agent")
+def update_agent_settings(req: AgentSettingsUpdate) -> dict:
+    """更新 Agent 工具配置。"""
+    settings = user_settings.load()
+    if "agent" not in settings:
+        settings["agent"] = {}
+    settings["agent"]["tavily_api_key"] = req.tavily_api_key.strip()
+    user_settings.save(settings)
+    logger.info("Agent 工具配置已更新")
+    return {"status": "ok", "tavily_api_key": settings["agent"]["tavily_api_key"]}
+
+
 @router.get("/settings/profile")
 def get_profile() -> dict:
     """获取用户画像。"""

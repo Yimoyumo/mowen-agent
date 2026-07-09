@@ -8,6 +8,7 @@ import PersonaSettings from '@/components/settings/PersonaSettings.vue'
 import MemorySettings from '@/components/settings/MemorySettings.vue'
 import ProfileSettings from '@/components/settings/ProfileSettings.vue'
 import McpSettings from '@/components/settings/McpSettings.vue'
+import AgentSettings from '@/components/settings/AgentSettings.vue'
 import { useRouter } from 'vue-router'
 
 const {
@@ -27,6 +28,8 @@ const {
   handleDeleteProvider,
   handleSetEmbeddingModel,
   handleSetEmbeddingCustom,
+  agentSettings,
+  handleSaveAgentSettings,
   saveProfile,
   handleAddMemory,
   handleUpdateMemory,
@@ -135,6 +138,15 @@ function doAddProvider(name: string, baseUrl: string, apiKey: string, callback: 
             :profile="profile"
             :saving="saving"
             @save="saveProfile"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="Agent 工具" name="agent">
+          <AgentSettings
+            v-if="agentSettings"
+            :tavily-api-key="agentSettings.tavily_api_key"
+            :saving="saving"
+            @save="handleSaveAgentSettings"
           />
         </el-tab-pane>
 
