@@ -76,7 +76,11 @@ def get_chat_model(config: RAGConfig | None = None):
     kwargs = _build_kwargs(config)
     if base_url:
         kwargs["base_url"] = base_url
-    return ChatOpenAI(api_key=api_key, **kwargs)
+    return ChatOpenAI(
+        api_key=api_key,
+        stream_chunk_timeout=None,  # 禁用 chunk 超时，Agent 工具链可能长时间无输出
+        **kwargs,
+    )
 
 
 def test_model_connectivity(

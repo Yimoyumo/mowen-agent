@@ -43,6 +43,7 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
         "langchain-classic>=1.0" "langchain-text-splitters>=1.1" \
         "langchain-chroma>=1.1" "chromadb>=1.5" \
         "pypdf>=6.0" "pymupdf>=1.25" "python-docx>=1.1" "lxml>=6.0" \
+        "Pillow>=10.0" \
         "httpx>=0.28" \
         "fastapi>=0.139" "uvicorn>=0.49" \
         "langchain-deepseek>=1.1" "langgraph>=1.2" \
@@ -54,13 +55,15 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
     python3 -c "import uvicorn, fastapi, langchain, langgraph; print('依赖验证通过')"
 
 # 安装 Playwright Chromium（@playwright/mcp 需要）
+# 同时预装 MCP filesystem 服务器，避免 npx 缓存损坏导致加载 0 工具
 # npm 用淘宝镜像，浏览器从官方 CDN 下载（淘宝镜像不含 Chrome for Testing）
-RUN npm install -g @playwright/mcp && \
+RUN npm install -g @playwright/mcp @modelcontextprotocol/server-filesystem && \
     for i in 1 2 3; do \
         unset PLAYWRIGHT_DOWNLOAD_HOST && \
         npx @playwright/mcp install-browser chrome-for-testing && break || \
         echo "Playwright 安装重试 $i/3..." && sleep 5; \
-    done
+    done && \
+    DEBIAN_FRONTEND=noninteractive npx playwright install-deps chromium 2>&1 || true
 
 # 复制项目代码
 COPY . .
