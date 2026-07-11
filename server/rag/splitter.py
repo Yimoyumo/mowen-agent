@@ -28,6 +28,7 @@ from langchain_core.documents import Document
 
 from server.core.config import RAGConfig
 from server.core.logging_config import get_logger
+from server.rag.cleaner import clean_documents, is_noise_chapter
 
 logger = get_logger(__name__)
 
@@ -61,24 +62,6 @@ def get_text_splitter(config: RAGConfig | None = None) -> RecursiveCharacterText
         length_function=len,
         is_separator_regex=False,
     )
-
-
-# 明显不属于正文内容的章节标题，构建向量库时过滤掉
-NOISE_CHAPTER_TITLES = {
-    "作者 : 夜猫菌",
-    "作者: 夜猫菌",
-}
-NOISE_KEYWORDS = ["图片 :", "图片:", "约稿证明", "书友群", "南锦外群", "新书已发", "完结感言"]
-
-
-def _is_noise_chapter(title: str, content: str) -> bool:
-    """判断章节是否为非正文噪声（如图片占位、作者公告）。"""
-    if title in NOISE_CHAPTER_TITLES:
-        return True
-    for kw in NOISE_KEYWORDS:
-        if kw in title or kw in content:
-            return True
-    return False
 
 
 def _detect_chapter_pattern(text: str, sample_lines: int = 2000) -> re.Pattern | None:
@@ -213,7 +196,7 @@ def _split_by_chapters(
                 # 保存上一个章节
                 if current_lines:
                     content = "\n".join(current_lines).strip()
-                    if content and not _is_noise_chapter(current_title, content):
+                    if content and not is_noise_chapter(current_title, content):
                         chapters.append(
                             Document(
                                 page_content=content,
@@ -231,7 +214,7 @@ def _split_by_chapters(
         # 保存最后一个章节
         if current_lines:
             content = "\n".join(current_lines).strip()
-            if content and not _is_noise_chapter(current_title, content):
+            if content and not is_noise_chapter(current_title, content):
                 chapters.append(
                     Document(
                         page_content=content,
@@ -243,55 +226,6 @@ def _split_by_chapters(
                 )
 
     return chapters
-
-
-def _filter_toc_pages(documents: list[Document]) -> list[Document]:
-    """过滤疑似目录页的文档 + 分离图片型 Document。
-
-    目录页特征：大量「标题 ... 页码」格式的行、行短且规律。
-    目录信息密度低，嵌入向量库会浪费 token 并干扰检索。
-
-    图片型 Document（page_content 以 [IMAGE] 开头）直接透传，不参与文本切分。
-    """
-    # 目录行模式：标题（含中文/英文/数字） + 点/空格分隔符 + 数字页码
-    _TOC_PATTERN = re.compile(
-        r"[\u4e00-\u9fa5A-Za-z0-9].*[.．\s]{3,}\s*\d{1,4}\s*$"
-    )
-
-    kept: list[Document] = []
-    skipped_count = 0
-    for doc in documents:
-        # 图片型 Document 直接保留（不在 splitter 中切分）
-        if doc.page_content.startswith("[IMAGE]\n"):
-            kept.append(doc)
-            continue
-
-        lines = doc.page_content.splitlines()
-        if len(lines) < 3:
-            kept.append(doc)
-            continue
-
-        toc_lines = 0
-        for line in lines:
-            s = line.strip()
-            if not s:
-                continue
-            if len(s) > 100:   # 目录行通常较短
-                continue
-            if _TOC_PATTERN.match(s):
-                toc_lines += 1
-
-        # 超过 40% 的行匹配目录模式 → 视为目录页
-        ratio = toc_lines / max(len(lines), 1)
-        if ratio >= 0.4 and toc_lines >= 2:
-            skipped_count += 1
-            continue
-
-        kept.append(doc)
-
-    if skipped_count:
-        logger.info("过滤 %d 个目录页", skipped_count)
-    return kept
 
 
 def split_documents(documents: list[Document], config: RAGConfig | None = None) -> list[Document]:
@@ -317,8 +251,8 @@ def split_documents_by_type(
     """
     config = config or RAGConfig.from_settings()
 
-    # 过滤目录页（所有类型通用）
-    documents = _filter_toc_pages(documents)
+    # 数据清洗（所有类型通用，含目录页过滤、噪声检测）
+    documents = clean_documents(documents)
 
     if kb_type == "novel":
         return _split_novel_documents(documents, config)
@@ -326,16 +260,13 @@ def split_documents_by_type(
         return _split_tech_documents(documents, config)
     if kb_type == "project":
         return _split_project_documents(documents, config)
+    if kb_type == "book":
+        return _split_book_documents(documents, config)
 
     # general：使用全局配置
-    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
-    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
-    if not text_docs:
-        return image_docs
-
     if not config.chapter_split:
         splitter = get_text_splitter(config)
-        return splitter.split_documents(text_docs) + image_docs
+        return splitter.split_documents(documents)
     return _split_novel_documents(documents, config)
 
 
@@ -344,18 +275,10 @@ def _split_novel_documents(documents: list[Document], config: RAGConfig) -> list
 
     会先自动检测章节标题样式；若检测失败（命中数<3），
     则回退到普通递归切分，避免把非章节行误判为章节。
-    图片型 Document 直接透传，不参与切分。
     """
-    # 分离图片和文字 Document
-    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
-    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
-
-    if not text_docs:
-        return image_docs
-
     threshold = config.chapter_chunk_threshold or 1500
     overlap = config.chapter_chunk_overlap or 200
-    chapters = _split_by_chapters(text_docs)
+    chapters = _split_by_chapters(documents)
 
     if not chapters:
         # 未识别到章节，回退到普通递归切分
@@ -365,7 +288,7 @@ def _split_novel_documents(documents: list[Document], config: RAGConfig) -> list
             length_function=len,
             is_separator_regex=False,
         )
-        return splitter.split_documents(text_docs) + image_docs
+        return splitter.split_documents(documents)
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=threshold,
@@ -395,15 +318,7 @@ def _split_tech_documents(documents: list[Document], config: RAGConfig) -> list[
     """技术文档类型：按 Markdown 标题层级切分，超长部分再递归细分。
 
     若 Markdown 标题切分无结果（例如 PDF 无标题标记），自动降级为通用递归切分。
-    图片型 Document 直接透传。
     """
-    # 分离图片和文字
-    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
-    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
-
-    if not text_docs:
-        return image_docs
-
     chunk_size = 800
     chunk_overlap = 100
     header_splitter = MarkdownHeaderTextSplitter(
@@ -418,7 +333,7 @@ def _split_tech_documents(documents: list[Document], config: RAGConfig) -> list[
     )
 
     final_chunks: list[Document] = []
-    for doc in text_docs:
+    for doc in documents:
         if not doc.page_content or not doc.page_content.strip():
             continue
         try:
@@ -445,19 +360,13 @@ def _split_tech_documents(documents: list[Document], config: RAGConfig) -> list[
             length_function=len,
             is_separator_regex=False,
         )
-        return general_splitter.split_documents(text_docs) + image_docs
+        return general_splitter.split_documents(documents)
 
-    return final_chunks + image_docs
+    return final_chunks
 
 
 def _split_project_documents(documents: list[Document], config: RAGConfig) -> list[Document]:
-    """项目文档类型：保护代码块/表格的递归切分。图片型 Document 直接透传。"""
-    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
-    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
-
-    if not text_docs:
-        return image_docs
-
+    """项目文档类型：保护代码块/表格的递归切分。"""
     chunk_size = 1000
     chunk_overlap = 150
     separators = ["\n## ", "\n### ", "\n#### ", "\n\n", "\n", "。", " ", ""]
@@ -468,4 +377,208 @@ def _split_project_documents(documents: list[Document], config: RAGConfig) -> li
         length_function=len,
         is_separator_regex=False,
     )
-    return splitter.split_documents(text_docs) + image_docs
+    return splitter.split_documents(documents)
+
+
+# ==================== 专业书籍 ====================
+
+# 代码块标记：```...``` 或缩进 4+ 空格的连续行
+_CODE_FENCE_START = re.compile(r"^```")
+# 表格行：含 | 或 \t 分隔，至少 2 个分隔符
+_TABLE_LINE = re.compile(r"\|.*\|.*\|")
+
+
+def _is_code_fence(line: str) -> bool:
+    """判断是否为代码围栏开始/结束行。"""
+    return bool(_CODE_FENCE_START.match(line.strip()))
+
+
+def _is_table_line(line: str) -> bool:
+    """判断是否为表格行。"""
+    return bool(_TABLE_LINE.match(line))
+
+
+def _protect_blocks(text: str) -> tuple[str, dict[str, str]]:
+    """保护代码块和表格，替换为占位符，防止被切分器拆碎。
+
+    Returns:
+        (替换后的文本, 占位符 -> 原始内容 的映射)
+    """
+    placeholders: dict[str, str] = {}
+    lines = text.split("\n")
+    result: list[str] = []
+    i = 0
+    counter = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        # 代码围栏块
+        if _is_code_fence(line):
+            block_lines = [line]
+            i += 1
+            while i < len(lines) and not _is_code_fence(lines[i]):
+                block_lines.append(lines[i])
+                i += 1
+            if i < len(lines):
+                block_lines.append(lines[i])  # 结束 ```
+                i += 1
+            key = f"§§CODE_BLOCK_{counter}§§"
+            placeholders[key] = "\n".join(block_lines)
+            result.append(key)
+            counter += 1
+            continue
+
+        # 表格块：连续 2+ 行表格行
+        if _is_table_line(line):
+            block_lines = [line]
+            i += 1
+            while i < len(lines) and (_is_table_line(lines[i]) or lines[i].strip().startswith("|---") or lines[i].strip() == ""):
+                block_lines.append(lines[i])
+                i += 1
+            # 回退末尾空行
+            while block_lines and block_lines[-1].strip() == "":
+                block_lines.pop()
+                i -= 1
+            if len(block_lines) >= 2:
+                key = f"§§TABLE_BLOCK_{counter}§§"
+                placeholders[key] = "\n".join(block_lines)
+                result.append(key)
+                counter += 1
+                continue
+            else:
+                result.extend(block_lines)
+                continue
+
+        result.append(line)
+        i += 1
+
+    return "\n".join(result), placeholders
+
+
+def _restore_blocks(text: str, placeholders: dict[str, str]) -> str:
+    """将占位符还原为原始代码块/表格内容。"""
+    for key, original in placeholders.items():
+        text = text.replace(key, original)
+    return text
+
+
+def _split_book_documents(documents: list[Document], config: RAGConfig) -> list[Document]:
+    """专业书籍类型：章节检测 + 代码块/表格保护 + 递归细切。
+
+    处理流程：
+    1. 先尝试 Markdown 标题切分（适合 .md 源文件）
+    2. 失败则用通用章节检测（第X章/Chapter X/X.标题），复用小说的检测逻辑
+    3. 切分时保护代码块和表格不被拆碎
+    4. 每个分块带上章节标题上下文
+    """
+    chunk_size = 1200
+    chunk_overlap = 150
+
+    # 尝试 Markdown 标题切分
+    header_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
+        strip_headers=False,
+    )
+    sub_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len,
+        is_separator_regex=False,
+    )
+
+    final_chunks: list[Document] = []
+
+    for doc in documents:
+        if not doc.page_content or not doc.page_content.strip():
+            continue
+
+        # 保护代码块和表格
+        protected_text, placeholders = _protect_blocks(doc.page_content)
+
+        # 优先尝试通用章节检测（适合 PDF/纯文本提取的专业书）
+        header_chunks = _split_book_by_chapters(protected_text, doc.metadata)
+
+        # 通用检测失败 -> 尝试 Markdown 标题切分（适合 .md 源文件）
+        if not header_chunks:
+            try:
+                md_chunks = header_splitter.split_text(protected_text)
+            except Exception:
+                md_chunks = []
+            if md_chunks and len(md_chunks) > 1:
+                header_chunks = [
+                    Document(page_content=c.page_content, metadata={**doc.metadata, **c.metadata})
+                    for c in md_chunks
+                ]
+
+        # 仍然无结果 -> 直接递归切分
+        if not header_chunks:
+            header_chunks = [Document(page_content=protected_text, metadata=doc.metadata)]
+
+        for chunk in header_chunks:
+            chunk.metadata = {**doc.metadata, **chunk.metadata}
+            # 还原代码块/表格
+            content = _restore_blocks(chunk.page_content, placeholders)
+
+            if len(content) <= chunk_size:
+                final_chunks.append(Document(page_content=content, metadata=chunk.metadata))
+                continue
+
+            # 超长 -> 递归细切
+            sub_chunks = sub_splitter.split_documents([Document(page_content=content, metadata=chunk.metadata)])
+            for sub in sub_chunks:
+                sub.metadata = {**chunk.metadata, **sub.metadata}
+            final_chunks.extend(sub_chunks)
+
+    if not final_chunks:
+        logger.warning("专业书籍切分无结果，降级为通用递归切分")
+        general_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            length_function=len,
+            is_separator_regex=False,
+        )
+        return general_splitter.split_documents(documents)
+
+    logger.info("专业书籍切分完成: %d 个文本块", len(final_chunks))
+    return final_chunks
+
+
+def _split_book_by_chapters(text: str, base_metadata: dict) -> list[Document]:
+    """用通用章节检测（复用小说的 CHAPTER_PATTERNS）切分专业书籍。
+
+    与小说切分不同：不做噪声过滤，每个章节带上标题上下文。
+    """
+    pattern = _detect_chapter_pattern(text)
+    if pattern is None:
+        return []
+
+    chapters: list[Document] = []
+    lines = text.splitlines()
+    current_title = "前言"
+    current_lines: list[str] = []
+
+    for line in lines:
+        title = _match_chapter_title(line, pattern)
+        if title:
+            if current_lines:
+                content = "\n".join(current_lines).strip()
+                if content:
+                    chapters.append(Document(
+                        page_content=content,
+                        metadata={**base_metadata, "chapter": current_title},
+                    ))
+            current_title = title
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    if current_lines:
+        content = "\n".join(current_lines).strip()
+        if content:
+            chapters.append(Document(
+                page_content=content,
+                metadata={**base_metadata, "chapter": current_title},
+            ))
+
+    return chapters

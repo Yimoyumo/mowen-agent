@@ -23,8 +23,7 @@ logger = get_logger(__name__)
 KB_TYPES = {
     "novel": "小说",
     "tech": "技术文档",
-    "project": "项目文档",
-    "general": "通用文档",
+    "project": "项目文档",    "book": "专业书籍",    "general": "通用文档",
 }
 
 DEFAULT_KB_TYPE = "general"

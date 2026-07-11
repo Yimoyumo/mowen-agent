@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { Plus, Upload, Refresh, Delete, Document, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, watch, onMounted } from 'vue'
+import { Plus, Upload, Refresh, Delete, Document, ArrowDown, ArrowRight, WarningFilled } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { AxiosError } from 'axios'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
-import { getKnowledgeBaseDocuments } from '@/api/knowledgeBaseApi'
-import type { KnowledgeBaseDocumentInfo } from '@/types/api'
+import { getKnowledgeBaseDocuments, deleteKnowledgeBaseDocument } from '@/api/knowledgeBaseApi'
+import { getEmbeddingConfig } from '@/api/settingsApi'
+import type { KnowledgeBaseDocumentInfo, EmbeddingConfig } from '@/types/api'
 
 interface Props {
   creating: boolean
@@ -34,6 +35,31 @@ const kbDocs = ref<Record<string, KnowledgeBaseDocumentInfo[]>>({})
 const kbDocsLoading = ref<Record<string, boolean>>({})
 
 const canCreate = computed(() => newKbName.value.trim().length > 0 && !props.creating)
+
+// 当前全局 embedding 配置（用于检测维度不匹配）
+const currentEmbedding = ref<EmbeddingConfig | null>(null)
+
+async function loadEmbeddingConfig() {
+  try {
+    currentEmbedding.value = await getEmbeddingConfig()
+  } catch {
+    // 静默
+  }
+}
+
+onMounted(() => {
+  void loadEmbeddingConfig()
+})
+
+/** 检查知识库的向量模型是否与当前全局配置不匹配 */
+function isModelMismatch(kb: { embedding_model: string; embedding_dim: number }): boolean {
+  if (!kb.embedding_model || !currentEmbedding.value) return false
+  const currentModel = currentEmbedding.value.embedding_model
+  if (!currentModel) return false
+  // 比较 provider/model
+  const kbModel = kb.embedding_model
+  return currentModel !== kbModel
+}
 
 function openCreate() {
   newKbName.value = ''
@@ -76,7 +102,6 @@ function toggleDocs(kbId: string) {
 }
 
 async function loadDocs(kbId: string) {
-  if (kbDocs.value[kbId] || kbDocsLoading.value[kbId]) return
   kbDocsLoading.value[kbId] = true
   try {
     const res = await getKnowledgeBaseDocuments(kbId)
@@ -86,6 +111,35 @@ async function loadDocs(kbId: string) {
     ElMessage.error(axiosErr.response?.data?.detail || '加载文档信息失败')
   } finally {
     kbDocsLoading.value[kbId] = false
+  }
+}
+
+function reloadDocs(kbId: string) {
+  delete kbDocs.value[kbId]
+  void loadDocs(kbId)
+}
+
+const deletingDoc = ref(false)
+
+async function handleDeleteDoc(kbId: string, fileName: string) {
+  try {
+    await ElMessageBox.confirm(`确认删除文档 "${fileName}"？该文档的所有向量数据将被移除。`, '确认删除', {
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+
+  deletingDoc.value = true
+  try {
+    const res = await deleteKnowledgeBaseDocument(kbId, fileName)
+    ElMessage.success(res.message)
+    reloadDocs(kbId)
+  } catch (err) {
+    const axiosErr = err as AxiosError<{ detail?: string }>
+    ElMessage.error(axiosErr.response?.data?.detail || '删除文档失败')
+  } finally {
+    deletingDoc.value = false
   }
 }
 
@@ -138,6 +192,12 @@ watch(
               <div class="kb-item-name">{{ kb.name }}</div>
               <div class="kb-item-meta">
                 <el-tag size="small" effect="plain">{{ kbTypeLabel(kb.kb_type) }}</el-tag>
+                <el-tag v-if="kb.embedding_model" size="small" effect="plain" type="info">
+                  {{ kb.embedding_model.split('/').pop() }}
+                </el-tag>
+                <el-tag v-if="kb.embedding_dim" size="small" effect="plain" type="success">
+                  {{ kb.embedding_dim }}维
+                </el-tag>
               </div>
             </div>
           </div>
@@ -185,6 +245,11 @@ watch(
           </div>
         </div>
 
+        <div v-if="isModelMismatch(kb)" class="kb-mismatch-warning" @click.stop>
+          <el-icon class="warning-icon"><WarningFilled /></el-icon>
+          <span>向量模型已变更，检索可能出错。请重建向量库或切换回 {{ kb.embedding_model }}</span>
+        </div>
+
         <div v-if="expandedKbId === kb.id" class="kb-docs" @click.stop>
           <div v-if="kbDocsLoading[kb.id]" class="kb-docs-loading">
             <el-skeleton :rows="2" animated />
@@ -212,6 +277,16 @@ watch(
                 >
                   {{ doc.chapters.length }} 章节
                 </el-tag>
+                <el-tooltip content="删除文档" placement="top">
+                  <el-button
+                    :icon="Delete"
+                    size="small"
+                    link
+                    type="danger"
+                    :loading="deletingDoc"
+                    @click="handleDeleteDoc(kb.id, doc.file_name)"
+                  />
+                </el-tooltip>
               </div>
             </div>
           </div>
@@ -382,6 +457,20 @@ watch(
 
 .kb-item-actions .el-button.active {
   color: #1d1d1d;
+}
+
+.kb-mismatch-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 40px;
+  font-size: 12px;
+  color: #e6a23c;
+}
+
+.kb-mismatch-warning .warning-icon {
+  flex-shrink: 0;
+  font-size: 14px;
 }
 
 .kb-docs {

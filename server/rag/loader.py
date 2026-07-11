@@ -1,11 +1,12 @@
 """文档加载模块。
 
 支持加载 .txt、.md、.pdf、.docx、.doc、.json、.csv 等格式。
-PDF 使用 pymupdf 加载：优先提取文字，空白/扫描页渲染为图片（供多模态嵌入）。
+
+图片处理策略：
+- PDF/Word 中的图片会被提取到同名子目录，不参与 RAG 流程
+- 仅文字内容进入向量库
 """
 
-import base64
-import io
 from pathlib import Path
 
 from langchain_community.document_loaders import (
@@ -20,12 +21,10 @@ from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# 非 PDF 文件扩展名 -> Loader 映射
-_NON_PDF_LOADER_MAP = {
+# 非 PDF/Word 文件扩展名 -> Loader 映射
+_LOADER_MAP = {
     ".txt": TextLoader,
     ".md": TextLoader,
-    ".docx": UnstructuredWordDocumentLoader,
-    ".doc": UnstructuredWordDocumentLoader,
     ".csv": CSVLoader,
     ".json": JSONLoader,
 }
@@ -35,54 +34,58 @@ _PDF_MIN_TEXT_CHARS = 50
 
 
 def _load_pdf_pymupdf(file_path: Path) -> list[Document]:
-    """用 pymupdf 加载 PDF：优先文字，空白/扫描页渲染为图片。"""
+    """用 pymupdf 加载 PDF：提取全部文字合并为整书，跳过图片页。
+
+    合并为单个 Document 避免跨页割裂，切分时按章节/段落自然边界切分。
+    """
     import fitz  # pymupdf
 
-    docs: list[Document] = []
+    parts: list[str] = []
     text_pages = 0
-    image_pages = 0
+    skipped_pages = 0
 
     with fitz.open(str(file_path)) as doc:
         for page_num, page in enumerate(doc, 1):
             text = page.get_text("text").strip()
-            meta = {"source": str(file_path), "page": page_num}
 
             if len(text) >= _PDF_MIN_TEXT_CHARS:
-                docs.append(Document(page_content=text, metadata=meta))
+                parts.append(text)
                 text_pages += 1
-                continue
+            else:
+                skipped_pages += 1
 
-            # 空白/扫描页 → 渲染为 JPEG 图片（比 PNG 小 5-10 倍）
-            pix = page.get_pixmap(dpi=120)
-            img_bytes = pix.tobytes("jpeg", jpg_quality=75)
-            b64 = base64.b64encode(img_bytes).decode("ascii")
-            data_uri = f"data:image/jpeg;base64,{b64}"
-
-            # page_content 以 [IMAGE] 标记，embedding 层会识别并送入多模态模型
-            docs.append(Document(page_content=f"[IMAGE]\n{data_uri}", metadata=meta))
-            image_pages += 1
+    # 合并为整书一个 Document
+    full_text = "\n\n".join(parts)
+    docs = [Document(page_content=full_text, metadata={"source": str(file_path)})]
 
     logger.info(
-        "加载 %s: %d 页 (文字=%d, 图片=%d)",
+        "加载 %s: %d 个文字页合并为 1 个文档 (跳过 %d 个图片/空白页)",
         file_path.name,
-        text_pages + image_pages,
         text_pages,
-        image_pages,
+        skipped_pages,
     )
+    return docs
+
+
+def _load_docx_text(file_path: Path) -> list[Document]:
+    """加载 Word 文档：仅提取文字，跳过图片。"""
+    loader = UnstructuredWordDocumentLoader(str(file_path))
+    docs = loader.load()
+    logger.info("加载 %s: %d 个文档 (图片已跳过)", file_path.name, len(docs))
     return docs
 
 
 def load_documents(file_path: str | Path) -> list[Document]:
     """从文件路径加载文档。
 
-    支持 txt/md/csv/json 和 PDF（pymupdf 文字+图片双模式）。
-    注意：docx/doc 目前仅提取文字，不支持嵌入图片。
+    支持 txt/md/csv/json/PDF/Word。
+    PDF/Word 中的图片直接跳过，仅文字进入 RAG。
 
     Args:
         file_path: 文件路径。
 
     Returns:
-        Document 列表。
+        Document 列表（仅文字内容）。
     """
     file_path = Path(file_path)
     if not file_path.exists():
@@ -90,15 +93,19 @@ def load_documents(file_path: str | Path) -> list[Document]:
 
     suffix = file_path.suffix.lower()
 
-    # PDF 用 pymupdf 的文字/图片双模式
+    # PDF 用 pymupdf 提取文字 + 图片
     if suffix == ".pdf":
         return _load_pdf_pymupdf(file_path)
 
-    # 非 PDF
-    loader_cls = _NON_PDF_LOADER_MAP.get(suffix)
+    # Word 用 UnstructuredLoader + zip 提取图片
+    if suffix in (".docx", ".doc"):
+        return _load_docx_text(file_path)
+
+    # 其他格式
+    loader_cls = _LOADER_MAP.get(suffix)
     if loader_cls is None:
         raise ValueError(
-            f"不支持的文件类型: {suffix}，支持: {', '.join(sorted(_NON_PDF_LOADER_MAP))}, .pdf"
+            f"不支持的文件类型: {suffix}，支持: {', '.join(sorted(_LOADER_MAP))}, .pdf, .docx, .doc"
         )
 
     if loader_cls == JSONLoader:

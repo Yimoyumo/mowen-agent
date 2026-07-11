@@ -113,16 +113,19 @@ def expand_and_retrieve(
     question: str,
     collection_name: str = "default",
     config: RAGConfig | None = None,
+    kb_type: str = "general",
 ) -> list[Document]:
     """先扩写查询，再用扩写后的多个查询执行多查询检索。
 
     若扩写被禁用或失败（如 API 限流），则降级为直接使用原问题检索。
-    检索完成后，对结局/最终类问题会做章节标题匹配的后处理重排。
+    对小说类型，检索完成后会做结局/本质类问题的章节重排。
+    非小说类型直接走多查询检索。
 
     Args:
         question: 用户问题。
         collection_name: 目标知识库对应的 Chroma collection 名称。
         config: RAG 配置。
+        kb_type: 知识库类型，仅 novel 触发章节重排逻辑。
 
     Returns:
         检索到的相关文档列表，数量不超过 config.top_k。
@@ -131,24 +134,23 @@ def expand_and_retrieve(
     vector_store = load_vector_store(collection_name, config)
     retriever = vector_store.as_retriever(search_kwargs={"k": config.top_k})
 
-    # 对结局/最终类问题，直接用原问题检索（避免扩写后语义发散），
-    # 并额外从终章类章节中检索，合并后终章内容前置
-    if _is_ending_question(question):
-        logger.debug("检测到结局类问题，优先召回终章内容")
-        base_docs = retriever.invoke(question)
-        ending_docs = _retrieve_by_chapter_keywords(
-            vector_store, question, config, ENDING_CHAPTER_KEYWORDS
-        )
-        return _merge_with_ending_priority(base_docs, ending_docs, config.top_k)
+    # 小说类型的结局/本质类问题重排（仅 novel 触发）
+    if kb_type == "novel":
+        if _is_ending_question(question):
+            logger.debug("检测到结局类问题，优先召回终章内容")
+            base_docs = retriever.invoke(question)
+            ending_docs = _retrieve_by_chapter_keywords(
+                vector_store, question, config, ENDING_CHAPTER_KEYWORDS
+            )
+            return _merge_with_ending_priority(base_docs, ending_docs, config.top_k)
 
-    # 对本质/真实身份类问题，优先召回揭示真相的章节
-    if _is_essence_question(question):
-        logger.debug("检测到本质/身份类问题，优先召回核心章节")
-        base_docs = retriever.invoke(question)
-        essence_docs = _retrieve_by_chapter_keywords(
-            vector_store, question, config, ESSENCE_CHAPTER_KEYWORDS
-        )
-        return _merge_with_ending_priority(base_docs, essence_docs, config.top_k)
+        if _is_essence_question(question):
+            logger.debug("检测到本质/身份类问题，优先召回核心章节")
+            base_docs = retriever.invoke(question)
+            essence_docs = _retrieve_by_chapter_keywords(
+                vector_store, question, config, ESSENCE_CHAPTER_KEYWORDS
+            )
+            return _merge_with_ending_priority(base_docs, essence_docs, config.top_k)
 
     if not config.enable_query_expansion:
         logger.debug("查询扩写已关闭，使用原问题检索")

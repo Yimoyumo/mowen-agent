@@ -60,19 +60,7 @@ def search_knowledge_base(query: str) -> str:
     if not docs:
         return "（知识库中未找到相关内容）"
 
-    return "\n\n---\n\n".join(
-        f"【来源 {i + 1}】{_clean_doc_content(doc)}"
-        for i, doc in enumerate(docs)
-    )
-
-
-def _clean_doc_content(doc) -> str:
-    """去掉图片 Document 的 base64 数据，替换为页面引用。"""
-    if doc.page_content.startswith("[IMAGE]\n"):
-        source = doc.metadata.get("source", "未知")
-        page = doc.metadata.get("page", "?")
-        return f"[第 {page} 页图片，来自 {source}]"
-    return doc.page_content
+    return "\n\n---\n\n".join(doc.page_content for i, doc in enumerate(docs))
 
 
 @tool

@@ -174,6 +174,43 @@ def build_kb_endpoint(kb_id: str) -> dict:
     return {"status": "ok", "message": f"知识库 {kb.name} 重建完成"}
 
 
+@router.delete("/knowledge-bases/{kb_id}/documents/{file_name:path}")
+def delete_kb_document(kb_id: str, file_name: str) -> dict:
+    """从知识库中删除指定文档的所有向量数据。
+
+    根据文件名匹配 Chroma collection 中的 source 元数据，
+    删除该文档对应的所有文本块。
+    """
+    kb = get_knowledge_base(kb_id)
+    if kb is None:
+        raise NotFoundError("知识库不存在")
+
+    try:
+        vector_store = load_vector_store(kb.collection_name)
+        collection = vector_store._collection
+
+        # 获取所有文档的元数据，找出匹配的文档 ID
+        data = collection.get(include=["metadatas"])
+        ids_to_delete: list[str] = []
+        for doc_id, meta in zip(data["ids"], data.get("metadatas") or []):
+            source = meta.get("source", "") if meta else ""
+            # 匹配完整路径或文件名
+            if Path(source).name == file_name or source == file_name:
+                ids_to_delete.append(doc_id)
+
+        if not ids_to_delete:
+            raise NotFoundError(f"知识库中未找到文档: {file_name}")
+
+        collection.delete(ids=ids_to_delete)
+        logger.info("从知识库 %s 删除文档 %s (%d 个文本块)", kb.name, file_name, len(ids_to_delete))
+    except NotFoundError:
+        raise
+    except Exception as exc:
+        raise InternalError("删除文档失败", detail=str(exc)) from exc
+
+    return {"status": "ok", "message": f"已删除文档 {file_name}（{len(ids_to_delete)} 个文本块）"}
+
+
 @router.post("/knowledge-bases/{kb_id}/upload")
 def upload_kb_endpoint(
     kb_id: str,

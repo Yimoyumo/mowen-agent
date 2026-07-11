@@ -43,6 +43,8 @@ export interface KnowledgeBase {
   description: string
   created_at: string
   kb_type: string
+  embedding_model: string
+  embedding_dim: number
 }
 
 export interface KnowledgeBaseDocumentInfo {

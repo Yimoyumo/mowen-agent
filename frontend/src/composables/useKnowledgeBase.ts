@@ -21,6 +21,7 @@ export function useKnowledgeBaseManager() {
     { value: 'novel', label: '小说' },
     { value: 'tech', label: '技术文档' },
     { value: 'project', label: '项目文档' },
+    { value: 'book', label: '专业书籍' },
     { value: 'general', label: '通用文档' },
   ])
 

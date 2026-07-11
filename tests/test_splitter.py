@@ -3,7 +3,7 @@
 测试内容：
 - _detect_chapter_pattern 章节模式检测
 - _match_chapter_title 章节标题匹配
-- _is_noise_chapter 噪声章节过滤
+- is_noise_chapter 噪声章节过滤（从 cleaner 导入）
 - _split_by_chapters 按章节切分
 - split_documents_by_type 各类型切分（novel/tech/project/general）
 - get_text_splitter 分割器创建
@@ -13,10 +13,10 @@ import pytest
 from langchain_core.documents import Document
 
 from server.core.config import RAGConfig
+from server.rag.cleaner import is_noise_chapter
 from server.rag.splitter import (
     _detect_chapter_pattern,
     _match_chapter_title,
-    _is_noise_chapter,
     _split_by_chapters,
     split_documents_by_type,
     get_text_splitter,
@@ -95,19 +95,19 @@ class TestMatchChapterTitle:
 
 
 class TestIsNoiseChapter:
-    """_is_noise_chapter 噪声过滤。"""
+    """is_noise_chapter 噪声过滤。"""
 
     def test_noise_title(self):
-        assert _is_noise_chapter("作者 : 夜猫菌", "任何内容")
+        assert is_noise_chapter("作者 : 夜猫菌", "任何内容")
 
     def test_noise_keyword_in_content(self):
-        assert _is_noise_chapter("某章节", "图片 : 某图片描述")
+        assert is_noise_chapter("某章节", "图片 : 某图片描述")
 
     def test_normal_chapter(self):
-        assert not _is_noise_chapter("第一章 伊始之日", "清晨的阳光洒在小镇上")
+        assert not is_noise_chapter("第一章 伊始之日", "清晨的阳光洒在小镇上")
 
     def test_noise_keyword_in_title(self):
-        assert _is_noise_chapter("完结感言", "感谢大家支持")
+        assert is_noise_chapter("完结感言", "感谢大家支持")
 
 
 class TestSplitByChapters:

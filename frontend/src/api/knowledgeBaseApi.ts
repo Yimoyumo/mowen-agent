@@ -43,6 +43,16 @@ export async function getKnowledgeBaseDocuments(
   return data
 }
 
+export async function deleteKnowledgeBaseDocument(
+  kbId: string,
+  fileName: string,
+): Promise<BuildResponse> {
+  const { data } = await apiClient.delete<BuildResponse>(
+    `/knowledge-bases/${kbId}/documents/${encodeURIComponent(fileName)}`,
+  )
+  return data
+}
+
 export async function uploadDocumentToKnowledgeBase(
   kbId: string,
   file: File,
