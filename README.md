@@ -6,28 +6,31 @@
 
 - **Agent 自主决策**：LLM 自动判断是否需要调用工具（知识库检索 / 联网搜索 / 沙盒执行）
 - **Docker 沙盒**：在隔离的 Linux 容器中执行代码、安装包、处理文件，支持文件上传/下载
-- **知识库 RAG**：上传文档后自动切分入库，回答时精准定位相关内容，支持 PDF / Word / TXT / Markdown
-- **向量维度保护**：自动检测 embedding 维度并记录，切换模型时校验，防止维度不匹配崩溃
+- **知识库 RAG**：上传文档后自动清洗+切分入库，回答时精准定位相关内容，支持 PDF / Word / TXT / Markdown
+- **数据清洗**：统一换行符、去零宽字符、去页码、修复 PDF 断词、过滤目录页和噪声章节，提升召回片段质量
+- **多类型切分策略**：小说（章节检测）/ 技术文档（Markdown 标题）/ 项目文档（保护代码块）/ 专业书籍（章节+代码块/表格保护）/ 通用文档
+- **文档管理**：支持上传、删除单个文档、重建向量库，前端显示向量模型与维度信息
+- **向量维度保护**：自动检测 embedding 维度并记录，切换模型时校验并提示用户，防止维度不匹配崩溃
 - **Docker 沙盒**：在隔离的 Linux 容器中执行代码、安装包、处理文件，支持文件上传/下载，workspace 持久化
 - **联网搜索**：通过 Tavily 实时搜索最新信息（需配置 API Key）
 - **网页抓取**：抓取指定 URL 的网页内容并转为 Markdown
 - **MCP 工具集成**：通过 Model Context Protocol 连接外部工具服务器（文件系统 / Playwright 浏览器 / GitHub 搜索）
 - **Skills 技能系统**：Markdown 格式的可扩展场景指导，Agent 按需参考
-- **长期记忆**：SQLite 持久化记忆，自动提取用户事实/偏好/对话摘要
+- **长期记忆**：JSON 文件持久化记忆，自动提取用户事实/偏好/对话摘要
 - **模型上下文窗口**：内置 50+ 模型官方上下文数据，支持按模型覆盖
 - **实时 Token 统计**：流式对话中实时显示输入/输出 token 用量与进度条
 - **多厂商切换**：DeepSeek / 智谱 AI / Kimi / 硅基流动，全部走 OpenAI 兼容接口
 - **人格设定**：可自定义 Agent 性格与回答风格（如猫娘助手）
 - **流式输出**：逐 token 输出，支持展示推理过程（DeepSeek 思考链）
 - **工具调用可视化**：前端实时显示工具调用状态和结果
-- **知识库管理**：创建、上传文档、重建向量库、删除，按类型（小说/技术/项目/通用）定制回答策略
+- **知识库管理**：创建、上传文档、删除单个文档、重建向量库，按类型（小说/技术/项目/专业书籍/通用）定制切分策略
 - **Markdown 渲染**：代码块、表格、列表、图片等完整支持
 - **会话持久化**：localStorage 保存对话历史和运行时设置
 - **设置页面**：可视化管理厂商 API Key、模型选择、向量模型、Agent 工具（Tavily）、人设、用户画像、记忆、MCP
 - **定时任务**：APScheduler 定时执行 Agent 任务，支持 cron/间隔/单次触发，前端可视化管理
 - **MCP 浏览器**：@playwright/mcp 集成，Agent 可浏览网页、截图、点击交互
 - **MCP 文件导出**：浏览器截图/PDF 等文件可导入沙盒再导出给用户下载
-- **测试覆盖**：pytest 187 个测试用例覆盖核心模块
+- **测试覆盖**：pytest 测试用例覆盖核心模块
 - **Docker 一键部署**：多阶段构建（前端+后端+Nginx），docker compose up 即可运行
 
 ## 架构
@@ -60,8 +63,8 @@
 | 前端 | Vue 3 + TypeScript + Vite + Element Plus |
 | Agent 框架 | LangGraph (ReAct) + create_react_agent |
 | LLM | DeepSeek / 智谱 AI / Kimi / 硅基流动（全部 OpenAI 兼容接口） |
-| Embedding | OpenAI 兼容（BGE / Qwen3-Embedding / 智谱等，自动排除 VL 视觉模型） |
-| 向量库 | ChromaDB（维度自动检测与校验） |
+| Embedding | OpenAI 兼容（BGE / Qwen3-Embedding / 智谱等，check_embedding_ctx_length 兼容非 OpenAI 模型） |
+| 向量库 | ChromaDB（维度自动检测与校验，模型不匹配时前端警告） |
 | 沙盒 | Docker SDK for Python（mowen-sandbox 自建镜像，workspace 持久化） |
 | MCP | langchain-mcp-adapters + @playwright/mcp |
 | 定时任务 | APScheduler (AsyncIOScheduler + SQLite) |
@@ -70,7 +73,7 @@
 | 错误处理 | 统一异常体系 + 全局异常处理器 + lifespan 生命周期 |
 | 数据库 | SQLite (WAL 模式 + 线程本地连接) |
 | 会话持久化 | SQLite + localStorage 双写同步 |
-| 测试 | pytest + pytest-asyncio + pytest-cov（187 个用例） |
+| 测试 | pytest + pytest-asyncio + pytest-cov |
 | 部署 | Docker Compose（Nginx + Uvicorn 单容器） |
 
 ## 快速开始
@@ -142,9 +145,10 @@ docker compose up -d
 │   │   ├── provider_config.py      厂商预设配置
 │   │   └── model_context.py        模型上下文窗口映射（50+ 模型官方数据）
 │   ├── rag/                    RAG 管线层
-│   │   ├── loader.py               文档加载（TXT/MD/PDF/Word/CSV/JSON）
-│   │   ├── splitter.py             文档切分
-│   │   ├── vectorstore.py          Chroma 向量库
+│   │   ├── cleaner.py             数据清洗（换行/零宽/页码/断词/目录页/噪声）
+│   │   ├── loader.py               文档加载（TXT/MD/PDF/Word/CSV/JSON，PDF 合并整书）
+│   │   ├── splitter.py             文档切分（小说/技术/项目/专业书籍/通用）
+│   │   ├── vectorstore.py          Chroma 向量库（分批写入+维度校验）
 │   │   ├── knowledge_base.py       知识库元数据管理
 │   │   └── chain.py                RAG 链构建 + 向量库构建 + 问答接口
 │   ├── prompts/                提示词统一管理
@@ -173,7 +177,7 @@ docker compose up -d
 │       ├── config.py              配置与健康检查
 │       ├── conversations.py       会话历史 CRUD + 批量同步
 │       ├── files.py               文件上传/下载（200MB+类型白名单）
-│       ├── knowledge_bases.py     知识库 CRUD
+│       ├── knowledge_bases.py     知识库 CRUD + 文档上传/删除
 │       ├── memory.py              记忆管理 API
 │       ├── scheduled_tasks.py     定时任务 CRUD + 调度控制
 │       └── settings.py            厂商/模型/向量模型/人设/画像/MCP 配置 API
@@ -190,7 +194,7 @@ docker compose up -d
 ├── Dockerfile.app           # 应用镜像（前端+后端+Nginx 多阶段构建）
 ├── docker-compose.yml       # Docker Compose 编排配置
 ├── deploy/                  # 部署配置（nginx.conf / start.sh / 部署脚本）
-├── tests/                  # 测试用例（187 个 pytest 测试）
+├── tests/                  # 测试用例（pytest 测试）
 │
 ├── frontend/               # Vue 3 前端
 │   └── src/
@@ -318,7 +322,7 @@ docker compose up -d
 
 ### 长期记忆
 
-Agent 在每轮对话后自动提取值得长期记住的信息（用户事实、偏好、对话摘要），存入 SQLite 数据库。下次对话时自动注入系统提示词。通过设置页面可查看、删除记忆条目。
+Agent 在每轮对话后自动提取值得长期记住的信息（用户事实、偏好、对话摘要），存入 JSON 文件（`data/memories.json`）。下次对话时自动注入系统提示词。通过设置页面可查看、删除记忆条目。
 
 ## Agent 模式
 
@@ -468,7 +472,7 @@ if not kb:
 
 - **上传限制**：200MB 大小限制 + 文件类型白名单（40+ 种扩展名）
 - **路径穿越防护**：文件名清理 + `resolve()` 校验
-- **并发安全**：`knowledge_bases.json` 原子写入 + `fcntl.flock` 文件锁
+- **临时文件**：知识库上传的文件存入临时目录，处理完后自动清理，原始文件不保留
 - **自动清理**：`uploads/` 24 小时过期，`downloads/` 24 小时过期
 
 ### MCP 容错
@@ -493,6 +497,51 @@ if not kb:
 3. **自动推断**：系统从所有厂商模型列表中自动查找 embedding 类模型
 
 前端设置页「向量模型」tab 可视化管理，支持开关自定义配置、选择厂商模型。
+
+### RAG 管线
+
+文档从上传到检索的完整流程：
+
+```
+用户上传文件
+  │
+  ▼
+loader.py          加载文档（PDF/Word/TXT/MD/CSV/JSON）
+                   PDF 合并为整书 Document，避免跨页割裂
+                   图片页面直接跳过，不参与 RAG
+  │
+  ▼
+cleaner.py         数据清洗（所有类型通用）
+                   统一换行 / 去零宽字符 / 去控制字符
+                   Unicode NFKC 标准化 / 修复 PDF 断词
+                   去页码行 / 过滤目录页 / 过滤过短文档
+  │
+  ▼
+splitter.py        按类型切分
+                   novel:    章节检测 + 长章节细切 + 噪声过滤
+                   tech:     Markdown 标题层级切分
+                   project:  保护代码块/表格的递归切分
+                   book:     章节检测 + 代码块/表格保护 + 递归细切
+                   general:  递归切分（或章节切分）
+  │
+  ▼
+vectorstore.py     Chroma 向量库（分批嵌入 + 维度检测记录）
+  │
+  ▼
+retriever.py       检索（查询扩写 + 多查询检索 + 去重）
+                   novel 类型特殊重排（结局/本质类问题优先）
+                   非小说类型纯多查询检索
+```
+
+支持的知识库类型：
+
+| 类型 | 说明 | 切分策略 |
+|------|------|----------|
+| novel | 小说 | 自动检测章节标题 + 长章节细切 + 噪声章节过滤 |
+| tech | 技术文档 | Markdown `#` 标题层级切分，失败降级递归切分 |
+| project | 项目文档 | 保护代码块/表格的递归切分 |
+| book | 专业书籍 | 章节检测 + 代码块/表格保护 + 递归细切（chunk_size=1200） |
+| general | 通用文档 | 递归切分（或开启章节切分） |
 
 ### Docker 部署
 
