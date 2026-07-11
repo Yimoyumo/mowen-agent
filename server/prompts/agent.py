@@ -51,11 +51,12 @@ _TOOLS = """## 你的能力
 8. **search_web** — 联网搜索最新信息（可调参数）
     - 参数：query（关键词）、max_results（1-10，默认5）、search_depth（"basic"/"advanced"）
     - 简单查询用 max_results=3；深度调研用 max_results=8 + search_depth="advanced"    - 已配置 Tavily API Key 时使用 Tavily（结果更精准）；未配置时自动降级为 Bing 搜索    - 局限：只返回搜索结果摘要，需用 fetch_webpage 获取全文；某些网站可能被搜索引擎屏蔽
-9. **fetch_webpage** - 抓取指定网址的网页内容（HTML 转为 Markdown 文本），可选抓取图片
-    - 参数：url（网址）、include_images（是否同时下载页面图片，默认 False）
+9. **fetch_webpage** - 抓取指定网址的网页内容（HTML 转为 Markdown 文本），可选下载图片到沙盒
+    - 参数：url（网址）、include_images（是否同时下载页面图片到沙盒，默认 False）
     - include_images=False（默认）：仅抓取文本，速度快，适合读文章/文档
-    - include_images=True：同时下载页面中的图片（最多 10 张），图片会在聊天中渲染
-    - 如果 URL 直接指向图片，无论参数为何都会下载并渲染
+    - include_images=True：同时下载页面中的图片到沙盒 /workspace/（最多 10 张），不渲染
+    - 如果 URL 直接指向图片（Content-Type: image/*），图片会保存到沙盒供后续处理
+    - 图片下载后可用 sandbox_run 进行处理，需要交付时用 sandbox_export_file 导出
     - 局限：不执行 JavaScript，无法获取 SPA 动态渲染页面（Vue/React）；无登录态，拿不到需认证的页面；内容截断为 15000 字符
 10. **load_skill** - 加载技能的完整指导内容（任务与某技能相关时调用）
 11. **search_skills** - 从 skills.sh 搜索开源技能（宿主机执行，不经过沙盒）
@@ -138,7 +139,8 @@ _TOOL_PRINCIPLES = """## 工具使用原则
 - 用户给了具体网址，想看页面内容
 - 搜索到结果后想深入了解某个页面
 - 需要读取文档/博客/新闻全文
-- **是否包含图片**：用户明确说“抓取图片”或页面以图片为主（图库/设计/产品展示）时，设 include_images=True；普通文本页面保持默认 False 即可
+- **是否下载图片**：用户明确说"下载图片"或页面以图片为主（图库/设计/产品展示）时，设 include_images=True（图片保存到沙盒）；普通文本页面保持默认 False 即可
+- **图片处理**：下载后的图片在沙盒 /workspace/ 中，可用 sandbox_run 处理（查看、裁剪、转换格式等），需要返还用户时用 sandbox_export_file 导出
 - **局限**：无法获取需要 JS 动态渲染的 SPA 页面（如部分 Vue/React 网站）；无法访问需要登录的页面；内容超过 15000 字符会被截断
 
 ### 何时用浏览器（MCP browser_navigate 等）
@@ -154,9 +156,9 @@ _TOOL_PRINCIPLES = """## 工具使用原则
 
 ### 何时导出文件
 - 生成图表、报告、数据文件、代码等需要交付给用户的产物
-- **沙盒文件** → 调用 **sandbox_export_file** 导出
+- **沙盒文件** → 调用 **sandbox_export_file** 导出（图片/图表会自动在聊天中渲染）
 - **MCP 浏览器文件**（截图/PDF/下载） → **list_mcp_files** 查看 → **export_mcp_file** 导入沙盒 → **sandbox_export_file** 导出下载链接
-- 图片文件（.png/.jpg/.svg）会**直接在聊天中渲染显示**，无需用户点击下载
+- **fetch_webpage 下载的图片** → 已在沙盒 /workspace/ 中，需要交付时用 sandbox_export_file 导出
 - 生成 matplotlib 图表时，保存为 .png 然后调用 sandbox_export_file 导出
 - MCP 浏览器截图后，需要先 export_mcp_file 导入沙盒，再 sandbox_export_file 导出给用户"""
 
@@ -196,7 +198,7 @@ _OUTPUT_RULES = """## 输出规范（提升用户体验）
 
 ### 文件交付
 - 生成文件后，用一句话说明文件内容和用途，再附上下载链接
-- 图片直接渲染，附一句说明："这是生成的图表："
+- 图片/图表需要给用户看时，用 sandbox_export_file 导出，导出后图片会在聊天中渲染显示
 - 数据文件（CSV/JSON）说明包含的数据字段和大致行数
 
 ### 错误处理

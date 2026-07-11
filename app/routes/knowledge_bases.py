@@ -208,8 +208,8 @@ def upload_kb_endpoint(
     temp_path = temp_dir / safe_filename
 
     try:
-        # 流式写入并检查大小（限制 50MB）
-        max_size = 50 * 1024 * 1024
+        # 流式写入并检查大小（限制 200MB）
+        max_size = 200 * 1024 * 1024
         total_size = 0
         with temp_path.open("wb") as f:
             while chunk := file.file.read(64 * 1024):

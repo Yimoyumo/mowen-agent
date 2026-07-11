@@ -42,7 +42,7 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
         "langchain>=1.3" "langchain-community>=0.3" \
         "langchain-classic>=1.0" "langchain-text-splitters>=1.1" \
         "langchain-chroma>=1.1" "chromadb>=1.5" \
-        "pypdf>=6.0" "python-docx>=1.1" "lxml>=6.0" \
+        "pypdf>=6.0" "pymupdf>=1.25" "python-docx>=1.1" "lxml>=6.0" \
         "httpx>=0.28" \
         "fastapi>=0.139" "uvicorn>=0.49" \
         "langchain-deepseek>=1.1" "langgraph>=1.2" \

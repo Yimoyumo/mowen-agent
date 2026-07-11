@@ -27,6 +27,9 @@ from langchain_text_splitters import (
 from langchain_core.documents import Document
 
 from server.core.config import RAGConfig
+from server.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # 中式/日式/数字章节号
@@ -242,6 +245,55 @@ def _split_by_chapters(
     return chapters
 
 
+def _filter_toc_pages(documents: list[Document]) -> list[Document]:
+    """过滤疑似目录页的文档 + 分离图片型 Document。
+
+    目录页特征：大量「标题 ... 页码」格式的行、行短且规律。
+    目录信息密度低，嵌入向量库会浪费 token 并干扰检索。
+
+    图片型 Document（page_content 以 [IMAGE] 开头）直接透传，不参与文本切分。
+    """
+    # 目录行模式：标题（含中文/英文/数字） + 点/空格分隔符 + 数字页码
+    _TOC_PATTERN = re.compile(
+        r"[\u4e00-\u9fa5A-Za-z0-9].*[.．\s]{3,}\s*\d{1,4}\s*$"
+    )
+
+    kept: list[Document] = []
+    skipped_count = 0
+    for doc in documents:
+        # 图片型 Document 直接保留（不在 splitter 中切分）
+        if doc.page_content.startswith("[IMAGE]\n"):
+            kept.append(doc)
+            continue
+
+        lines = doc.page_content.splitlines()
+        if len(lines) < 3:
+            kept.append(doc)
+            continue
+
+        toc_lines = 0
+        for line in lines:
+            s = line.strip()
+            if not s:
+                continue
+            if len(s) > 100:   # 目录行通常较短
+                continue
+            if _TOC_PATTERN.match(s):
+                toc_lines += 1
+
+        # 超过 40% 的行匹配目录模式 → 视为目录页
+        ratio = toc_lines / max(len(lines), 1)
+        if ratio >= 0.4 and toc_lines >= 2:
+            skipped_count += 1
+            continue
+
+        kept.append(doc)
+
+    if skipped_count:
+        logger.info("过滤 %d 个目录页", skipped_count)
+    return kept
+
+
 def split_documents(documents: list[Document], config: RAGConfig | None = None) -> list[Document]:
     """将文档列表切分为文本块（使用全局配置）。"""
     config = config or RAGConfig.from_settings()
@@ -265,6 +317,9 @@ def split_documents_by_type(
     """
     config = config or RAGConfig.from_settings()
 
+    # 过滤目录页（所有类型通用）
+    documents = _filter_toc_pages(documents)
+
     if kb_type == "novel":
         return _split_novel_documents(documents, config)
     if kb_type == "tech":
@@ -273,9 +328,14 @@ def split_documents_by_type(
         return _split_project_documents(documents, config)
 
     # general：使用全局配置
+    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
+    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
+    if not text_docs:
+        return image_docs
+
     if not config.chapter_split:
         splitter = get_text_splitter(config)
-        return splitter.split_documents(documents)
+        return splitter.split_documents(text_docs) + image_docs
     return _split_novel_documents(documents, config)
 
 
@@ -284,10 +344,18 @@ def _split_novel_documents(documents: list[Document], config: RAGConfig) -> list
 
     会先自动检测章节标题样式；若检测失败（命中数<3），
     则回退到普通递归切分，避免把非章节行误判为章节。
+    图片型 Document 直接透传，不参与切分。
     """
+    # 分离图片和文字 Document
+    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
+    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
+
+    if not text_docs:
+        return image_docs
+
     threshold = config.chapter_chunk_threshold or 1500
     overlap = config.chapter_chunk_overlap or 200
-    chapters = _split_by_chapters(documents)
+    chapters = _split_by_chapters(text_docs)
 
     if not chapters:
         # 未识别到章节，回退到普通递归切分
@@ -297,7 +365,7 @@ def _split_novel_documents(documents: list[Document], config: RAGConfig) -> list
             length_function=len,
             is_separator_regex=False,
         )
-        return splitter.split_documents(documents)
+        return splitter.split_documents(text_docs) + image_docs
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=threshold,
@@ -324,7 +392,18 @@ def _split_novel_documents(documents: list[Document], config: RAGConfig) -> list
 
 
 def _split_tech_documents(documents: list[Document], config: RAGConfig) -> list[Document]:
-    """技术文档类型：按 Markdown 标题层级切分，超长部分再递归细分。"""
+    """技术文档类型：按 Markdown 标题层级切分，超长部分再递归细分。
+
+    若 Markdown 标题切分无结果（例如 PDF 无标题标记），自动降级为通用递归切分。
+    图片型 Document 直接透传。
+    """
+    # 分离图片和文字
+    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
+    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
+
+    if not text_docs:
+        return image_docs
+
     chunk_size = 800
     chunk_overlap = 100
     header_splitter = MarkdownHeaderTextSplitter(
@@ -339,7 +418,9 @@ def _split_tech_documents(documents: list[Document], config: RAGConfig) -> list[
     )
 
     final_chunks: list[Document] = []
-    for doc in documents:
+    for doc in text_docs:
+        if not doc.page_content or not doc.page_content.strip():
+            continue
         try:
             header_chunks = header_splitter.split_text(doc.page_content)
         except Exception:
@@ -355,11 +436,28 @@ def _split_tech_documents(documents: list[Document], config: RAGConfig) -> list[
                 sub.metadata = {**chunk.metadata, **sub.metadata}
             final_chunks.extend(sub_chunks)
 
-    return final_chunks
+    # 降级：若 Markdown 切分无结果，改用通用递归切分
+    if not final_chunks:
+        logger.warning("Markdown 切分无结果，降级为通用递归切分")
+        general_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=config.chunk_size,
+            chunk_overlap=config.chunk_overlap,
+            length_function=len,
+            is_separator_regex=False,
+        )
+        return general_splitter.split_documents(text_docs) + image_docs
+
+    return final_chunks + image_docs
 
 
 def _split_project_documents(documents: list[Document], config: RAGConfig) -> list[Document]:
-    """项目文档类型：保护代码块/表格的递归切分。"""
+    """项目文档类型：保护代码块/表格的递归切分。图片型 Document 直接透传。"""
+    text_docs = [d for d in documents if not d.page_content.startswith("[IMAGE]\n")]
+    image_docs = [d for d in documents if d.page_content.startswith("[IMAGE]\n")]
+
+    if not text_docs:
+        return image_docs
+
     chunk_size = 1000
     chunk_overlap = 150
     separators = ["\n## ", "\n### ", "\n#### ", "\n\n", "\n", "。", " ", ""]
@@ -370,4 +468,4 @@ def _split_project_documents(documents: list[Document], config: RAGConfig) -> li
         length_function=len,
         is_separator_regex=False,
     )
-    return splitter.split_documents(documents)
+    return splitter.split_documents(text_docs) + image_docs

@@ -60,6 +60,17 @@ def _check_dimension_mismatch(
         )
 
 
+def _get_batch_size(documents: list[Document]) -> int:
+    """根据文档内容选择合适的批大小。
+
+    图片型 Document 的 base64 数据较大（每张 200-500KB），
+    批大小需降低以避免超过 API 单次请求限制。
+    """
+    if any(d.page_content.startswith("[IMAGE]\n") for d in documents):
+        return 8
+    return 64
+
+
 def create_vector_store(
     documents: list[Document],
     collection_name: str = "default",
@@ -80,8 +91,8 @@ def create_vector_store(
         collection_name=collection_name,
     )
 
-    # 分批添加，每批最多 64 条（智谱 API 限制）
-    batch_size = 64
+    # 分批添加，图片型数据用更小批大小
+    batch_size = _get_batch_size(documents)
     total = len(documents)
     for i in range(0, total, batch_size):
         batch = documents[i : i + batch_size]
@@ -138,8 +149,8 @@ def append_to_vector_store(
         collection_name=collection_name,
     )
 
-    # 分批添加，每批最多 64 条（智谱 API 限制）
-    batch_size = 64
+    # 分批添加，图片型数据用更小批大小
+    batch_size = _get_batch_size(documents)
     total = len(documents)
     for i in range(0, total, batch_size):
         batch = documents[i : i + batch_size]

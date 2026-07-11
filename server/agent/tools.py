@@ -61,9 +61,18 @@ def search_knowledge_base(query: str) -> str:
         return "（知识库中未找到相关内容）"
 
     return "\n\n---\n\n".join(
-        f"【来源 {i + 1}】{doc.page_content}"
+        f"【来源 {i + 1}】{_clean_doc_content(doc)}"
         for i, doc in enumerate(docs)
     )
+
+
+def _clean_doc_content(doc) -> str:
+    """去掉图片 Document 的 base64 数据，替换为页面引用。"""
+    if doc.page_content.startswith("[IMAGE]\n"):
+        source = doc.metadata.get("source", "未知")
+        page = doc.metadata.get("page", "?")
+        return f"[第 {page} 页图片，来自 {source}]"
+    return doc.page_content
 
 
 @tool
@@ -158,8 +167,8 @@ def fetch_webpage(url: str, include_images: bool = False) -> str:
     支持：自动编码检测、HTML 清洗（去除脚本/导航/页脚）、正文区域提取。
     参数 include_images 控制是否下载页面中的图片：
       - False（默认）：仅抓取文本内容，速度快
-      - True：同时下载页面中的图片（最多 10 张），图片会在聊天中渲染
-    如果 URL 直接指向图片（Content-Type: image/*），无论此参数为何值都会下载。
+      - True：同时下载页面中的图片到沙盒 /workspace/（最多 10 张），不渲染
+    如果 URL 直接指向图片（Content-Type: image/*），图片会保存到沙盒供后续处理。
     适用场景：用户给了具体网址，需要读取页面内容；或搜索到结果后想看详情。
     不适用场景：搜索关键词--请用 search_web。"""
     from server.agent.sandbox import get_or_create
@@ -322,17 +331,12 @@ else:
         return "（页面无内容）"
 
     # 处理输出中的图片标记
-    # 情况 1: URL 直接指向图片
+    # 情况 1: URL 直接指向图片 → 保存到沙盒即可，不导出渲染
     if output.startswith("IMAGE_FILE:"):
         img_path = output[len("IMAGE_FILE:"):].strip()
-        result = sb.export_file(img_path)
-        if result:
-            token, filename = result
-            img_url = f"/api/download/{token}/{filename}"
-            logger.info("抓取图片成功: %s -> %s", url, img_url)
-            return f"抓取到图片，在下方渲染：\n![{filename}]({img_url})"
-        else:
-            return "（图片导出失败）"
+        fname = img_path.rsplit("/", 1)[-1] if "/" in img_path else img_path
+        logger.info("抓取图片已保存到沙盒: %s", img_path)
+        return f"图片已保存到沙盒 {img_path}（{fname}）。后续可用 sandbox_run 对图片进行处理、分析等。"
 
     # 情况 2: 页面中包含已下载的图片
     image_paths = []
@@ -345,21 +349,13 @@ else:
             img_paths_str = img_line[len("IMAGES:"):].strip()
             image_paths = [p.strip() for p in img_paths_str.split(",") if p.strip()]
 
-    # 导出图片并生成 Markdown 引用
-    image_markdown = ""
+    image_note = ""
     if image_paths:
-        img_parts = []
-        for img_path in image_paths:
-            result = sb.export_file(img_path)
-            if result:
-                token, filename = result
-                dl_url = f"/api/download/{token}/{filename}"
-                img_parts.append(f"![{filename}]({dl_url})")
-        if img_parts:
-            image_markdown = "\n\n--- 抓取到的图片 ---\n" + "\n\n".join(img_parts) + "\n"
+        fnames = [p.rsplit("/", 1)[-1] for p in image_paths]
+        image_note = f"\n\n（页面中的 {len(image_paths)} 张图片已保存到沙盒，文件名: {', '.join(fnames)}）"
 
     logger.info("抓取网页成功: %s (%d 字符, %d 张图片)", url, len(text_content), len(image_paths))
-    return text_content + image_markdown
+    return text_content + image_note
 
 
 

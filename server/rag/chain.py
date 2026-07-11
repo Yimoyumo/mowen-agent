@@ -28,6 +28,23 @@ from server.rag.vectorstore import (
 logger = get_logger(__name__)
 
 
+_IMAGE_PREFIX = "[IMAGE]\n"
+
+
+def _strip_image_content(doc: Document) -> str:
+    """将图片型 Document 的内容替换为页面引用，去掉 base64 数据。"""
+    if doc.page_content.startswith(_IMAGE_PREFIX):
+        source = doc.metadata.get("source", "未知")
+        page = doc.metadata.get("page", "?")
+        return f"[第 {page} 页图片，来自 {source}]"
+    return doc.page_content
+
+
+def _strip_image_contexts(docs: list[Document]) -> list[str]:
+    """移除检索结果中图片的 base64 数据，保留页面引用。"""
+    return [_strip_image_content(d) for d in docs]
+
+
 # ==================== 集合名解析 ====================
 
 def _resolve_collection_name(kb_id: str | None, config: RAGConfig | None = None) -> str:
@@ -40,6 +57,16 @@ def _resolve_collection_name(kb_id: str | None, config: RAGConfig | None = None)
 
 
 # ==================== RAG 链构建 ====================
+
+def _strip_doc(doc: Document) -> Document:
+    """拷贝一个 Document，如果是图片型则去掉 base64。"""
+    if doc.page_content.startswith(_IMAGE_PREFIX):
+        return Document(
+            page_content=_strip_image_content(doc),
+            metadata=doc.metadata,
+        )
+    return doc
+
 
 def get_rag_chain(kb_id: str | None = None, config: RAGConfig | None = None):
     """构建带查询扩写的 RAG 检索生成链。
@@ -61,6 +88,9 @@ def get_rag_chain(kb_id: str | None = None, config: RAGConfig | None = None):
         RunnablePassthrough.assign(
             context=lambda x: expand_and_retrieve(x["input"], collection_name, config)
         )
+        | RunnablePassthrough.assign(
+            context=lambda x: [_strip_doc(d) for d in x["context"]]
+        )
         | RunnablePassthrough.assign(answer=question_answer_chain)
     )
 
@@ -81,6 +111,9 @@ def get_rag_streaming_chain(kb_id: str | None = None, config: RAGConfig | None =
     return (
         RunnablePassthrough.assign(
             context=lambda x: expand_and_retrieve(x["input"], collection_name, config)
+        )
+        | RunnablePassthrough.assign(
+            context=lambda x: [_strip_doc(d) for d in x["context"]]
         )
         | RunnablePassthrough.assign(answer=generate_answer)
     )
@@ -105,10 +138,9 @@ async def ask_stream(question: str, kb_id: str | None = None, config: RAGConfig 
 
     result = await chain.ainvoke({"input": question})
     contexts: list[Document] = result["context"]
-    context_texts = [doc.page_content for doc in contexts]
 
     yield {"type": "question", "question": question}
-    yield {"type": "contexts", "contexts": context_texts}
+    yield {"type": "contexts", "contexts": _strip_image_contexts(contexts)}
 
     answer_stream = result["answer"]
     async for token in answer_stream:
