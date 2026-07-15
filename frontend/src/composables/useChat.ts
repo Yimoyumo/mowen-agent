@@ -39,18 +39,18 @@ export function useChat() {
   const currentConversation = computed(() => store.currentConversation)
   const messages = computed(() => store.currentMessages)
 
-  /** 构建 API 请求所需的消息格式（过滤掉空的正在生成的 assistant 消息） */
+  /** 构建 API 请求所需的消息格式。
+   * 
+   * Checkpointer 模式：后端通过 thread_id 自动恢复历史，前端只需传最新一条消息。
+   * 为兼容性仍传完整列表，后端 Checkpointer 会自动去重。
+   */
   function buildApiMessages(): { role: 'user' | 'assistant'; content: string }[] {
     const conv = store.currentConversation
     if (!conv) return []
-    // 取最近 20 条消息作为上下文
-    return conv.messages
-      .slice(-20)
-      .filter(m => m.content.trim().length > 0)
-      .map(m => ({
-        role: m.role,
-        content: m.content,
-      }))
+    // 只取最后一条用户消息（Checkpointer 自动恢复之前的历史）
+    const lastUserMsg = [...conv.messages].reverse().find(m => m.role === 'user' && m.content.trim().length > 0)
+    if (!lastUserMsg) return []
+    return [{ role: 'user' as const, content: lastUserMsg.content }]
   }
 
   /** 把残留的 running 工具标记为已中断 */
