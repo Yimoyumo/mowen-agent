@@ -29,8 +29,12 @@ async def lifespan(app: FastAPI):
     """应用生命周期：启动时启动后台任务，关闭时冲洗记忆 + 销毁沙盒。"""
     from app.cleanup import start_cleanup_task, stop_cleanup_task
     from server.core.scheduler import scheduler_manager
+    from server.agent.checkpointer import get_checkpointer, close_checkpointer
 
     start_cleanup_task()
+
+    # 初始化 Agent Checkpointer（SQLite 持久化短期记忆）
+    await get_checkpointer()
 
     # 启动定时任务调度器（自动从 DB 恢复活跃任务）
     await scheduler_manager.start()
@@ -57,6 +61,11 @@ async def lifespan(app: FastAPI):
         destroy_all()
     except Exception as exc:
         logger.warning("关闭沙盒池失败: %s", exc)
+    # 关闭 Checkpointer 连接
+    try:
+        await close_checkpointer()
+    except Exception as exc:
+        logger.warning("关闭 Checkpointer 失败: %s", exc)
     logger.info("应用已关闭")
 
 

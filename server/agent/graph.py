@@ -14,11 +14,12 @@ import asyncio
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from server.core.config import RAGConfig
 from server.llm.factory import get_chat_model
 from server.agent.tools import get_agent_tools, set_agent_context
+from server.agent.checkpointer import get_checkpointer
 from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -41,8 +42,8 @@ from server.prompts import get_agent_system_prompt
 
 # ==================== 构建图 ====================
 
-def _build_graph(extra_tools: list = None, config: RAGConfig | None = None, uploaded_info: str = "", memory_prompt: str = "", persona_prompt: str = "", profile_prompt: str = ""):
-    """构建 LangGraph ReAct Agent。
+async def _build_graph(extra_tools: list = None, config: RAGConfig | None = None, uploaded_info: str = "", memory_prompt: str = "", persona_prompt: str = "", profile_prompt: str = ""):
+    """构建 LangGraph ReAct Agent（带 Checkpointer 短期记忆）。
 
     Args:
         extra_tools: 额外工具（如 MCP 工具），合并到内置工具后传给 Agent
@@ -69,7 +70,10 @@ def _build_graph(extra_tools: list = None, config: RAGConfig | None = None, uplo
         profile_prompt=profile_prompt,
     )
 
-    return create_react_agent(llm, all_tools, prompt=prompt)
+    # 获取 Checkpointer（SQLite 持久化，自动保存/恢复消息历史含工具结果）
+    checkpointer = await get_checkpointer()
+
+    return create_agent(llm, all_tools, prompt=prompt, checkpointer=checkpointer)
 
 
 # ==================== 统一对外接口 ====================
@@ -83,11 +87,17 @@ async def chat_stream(
     uploaded_files: list[dict] | None = None,
     session_id: str | None = None,
 ):
-    """Agent 对话（流式 / 非流式输出），完全兼容旧版 chat_chain.chat_stream()。
+    """Agent 对话（流式 / 非流式输出）。
+
+    使用 LangGraph Checkpointer 实现短期记忆持久化：
+    - 每次对话后自动保存完整状态（含 ToolMessage 工具结果）
+    - 下次对话通过 thread_id 自动恢复历史
+    - 工具调用结果跨请求保留，LLM 能看到之前的工具输出
 
     Args:
         uploaded_files: [{token, filename}] 用户上传的文件，Agent 自动导入沙盒
-        session_id: 会话 ID，用于沙盒跨消息持久化。同一 session_id 的消息共享同一沙盒。
+        session_id: 会话 ID，同时用作 Checkpointer thread_id 和沙盒标识。
+                   同一 session_id 的消息共享历史和沙盒。
 
     Agent 自主决定：
     - 何时检索知识库
@@ -107,8 +117,11 @@ async def chat_stream(
     # 将 kb_id、config 和 session_id 注入工具上下文
     set_agent_context(kb_id, config, session_id)
 
-    logger.info("对话开始 | messages=%d kb_id=%s stream=%s provider=%s model=%s session=%s",
-                len(messages), kb_id, stream, config.chat_provider, config.chat_model, session_id)
+    # 使用 session_id 作为 Checkpointer thread_id
+    thread_id = session_id or "default"
+
+    logger.info("对话开始 | messages=%d kb_id=%s stream=%s provider=%s model=%s thread=%s",
+                len(messages), kb_id, stream, config.chat_provider, config.chat_model, thread_id)
 
     # 加载记忆，注入 system prompt
     memory_prompt = memory_store.get_prompt()
@@ -169,11 +182,17 @@ async def chat_stream(
         # 构建 LangChain 消息列表（根据模型上下文窗口自动截断）
         lc_messages, input_tokens = _build_messages(messages, config, uploaded_files)
 
+        # 构建 graph config（含 thread_id，Checkpointer 自动恢复历史）
+        graph_config = {
+            "recursion_limit": 100,
+            "configurable": {"thread_id": thread_id},
+        }
+
         if not stream:
-            graph = _build_graph(extra_tools=mcp_tools, config=config, uploaded_info=uploaded_info, memory_prompt=memory_prompt, persona_prompt=persona_prompt, profile_prompt=profile_prompt)
+            graph = await _build_graph(extra_tools=mcp_tools, config=config, uploaded_info=uploaded_info, memory_prompt=memory_prompt, persona_prompt=persona_prompt, profile_prompt=profile_prompt)
             result = await graph.ainvoke(
                 {"messages": lc_messages},
-                config={"recursion_limit": 100},
+                config=graph_config,
             )
             final = result["messages"][-1]
             output_tokens = _estimate_tokens(str(final.content))
@@ -185,7 +204,7 @@ async def chat_stream(
         # 流式模式：实时统计输出 token
         output_token_count = 0
         ctx_window = config.get_active_model_context_window()
-        async for event in _stream_agent(lc_messages, show_reasoning, mcp_tools, config, uploaded_info, memory_prompt, persona_prompt, profile_prompt):
+        async for event in _stream_agent(lc_messages, show_reasoning, mcp_tools, config, uploaded_info, memory_prompt, persona_prompt, profile_prompt, thread_id=thread_id):
             if event.get("type") == "token":
                 output_token_count += _estimate_tokens(event.get("token", ""))
                 # 每个 token 事件附带实时统计
@@ -344,15 +363,22 @@ def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None, u
     return kept, total_tokens
 
 
-async def _stream_agent(messages: list, show_reasoning: bool, extra_tools: list = None, config: RAGConfig | None = None, uploaded_info: str = "", memory_prompt: str = "", persona_prompt: str = "", profile_prompt: str = ""):
-    """流式执行 Agent，逐 token / 工具事件输出。"""
-    graph = _build_graph(extra_tools=extra_tools, config=config, uploaded_info=uploaded_info, memory_prompt=memory_prompt, persona_prompt=persona_prompt, profile_prompt=profile_prompt)
+async def _stream_agent(messages: list, show_reasoning: bool, extra_tools: list = None, config: RAGConfig | None = None, uploaded_info: str = "", memory_prompt: str = "", persona_prompt: str = "", profile_prompt: str = "", thread_id: str = "default"):
+    """流式执行 Agent，逐 token / 工具事件输出。
+
+    Args:
+        thread_id: Checkpointer thread_id，用于自动恢复/保存历史。
+    """
+    graph = await _build_graph(extra_tools=extra_tools, config=config, uploaded_info=uploaded_info, memory_prompt=memory_prompt, persona_prompt=persona_prompt, profile_prompt=profile_prompt)
 
     try:
         async for event in graph.astream_events(
             {"messages": messages},
             version="v2",
-            config={"recursion_limit": 100},
+            config={
+                "recursion_limit": 100,
+                "configurable": {"thread_id": thread_id},
+            },
         ):
             event_type = event.get("event", "")
 
