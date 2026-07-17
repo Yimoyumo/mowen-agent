@@ -95,18 +95,38 @@ def _deduplicate_docs(docs: list[Document], max_count: int) -> list[Document]:
     return merged
 
 
+# RRF 平滑常数：防止排名第 1 的文档权重过大，论文推荐值 60
+_RRF_K = 60
+
+
 def _multi_query_retrieve(
     queries: list[str],
     retriever,
     top_k: int,
 ) -> list[Document]:
-    """执行多查询检索，合并去重后返回 top_k 个文档。"""
-    all_docs: list[Document] = []
+    """执行多查询检索，用 RRF（倒数排名融合）合并排序后返回 top_k 个文档。
+
+    RRF 原理：不看分数只看排名，每个文档在各路检索中的排名倒数求和，
+    分数越高说明越多查询认为它相关。公式：score = Σ 1/(k + rank_i)
+
+    相比顺序拼接去重，RRF 能让"多路都命中"的文档排前面，
+    同时"只被扩写查询命中"的文档也有机会入选。
+    """
+    # key -> {"doc": Document, "score": float}
+    rrf_scores: dict[str, dict] = {}
+
     for query in queries:
         docs = retriever.invoke(query)
-        all_docs.extend(docs)
+        for rank, doc in enumerate(docs):
+            key = doc.page_content[:200]
+            score = 1.0 / (_RRF_K + rank + 1)  # rank 从 0 开始，公式用 rank+1
+            if key not in rrf_scores:
+                rrf_scores[key] = {"doc": doc, "score": 0.0}
+            rrf_scores[key]["score"] += score
 
-    return _deduplicate_docs(all_docs, top_k)
+    # 按 RRF 总分降序排序，取前 top_k 个
+    sorted_items = sorted(rrf_scores.values(), key=lambda x: x["score"], reverse=True)
+    return [item["doc"] for item in sorted_items[:top_k]]
 
 
 def expand_and_retrieve(

@@ -73,7 +73,7 @@ async def _build_graph(extra_tools: list = None, config: RAGConfig | None = None
     # 获取 Checkpointer（SQLite 持久化，自动保存/恢复消息历史含工具结果）
     checkpointer = await get_checkpointer()
 
-    return create_agent(llm, all_tools, prompt=prompt, checkpointer=checkpointer)
+    return create_agent(llm, all_tools, system_prompt=prompt, checkpointer=checkpointer)
 
 
 # ==================== 统一对外接口 ====================
