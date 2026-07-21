@@ -101,13 +101,13 @@ _DEFAULT_SETTINGS = {
     },
     "mcp_servers": {
         "filesystem": {
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+            "command": "mcp-server-filesystem",
+            "args": ["/tmp"],
             "transport": "stdio",
         },
         "playwright": {
-            "command": "npx",
-            "args": ["-y", "@playwright/mcp", "--headless", "--browser", "chromium", "--output-dir", "downloads/playwright"],
+            "command": "playwright-mcp",
+            "args": ["--headless", "--browser", "chromium", "--output-dir", "downloads/playwright"],
             "transport": "stdio",
         },
     },

@@ -49,7 +49,8 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
         "langchain-deepseek>=1.1" "langgraph>=1.2" \
         "tavily-python>=0.7" "python-multipart>=0.0" \
         "docker>=7.1" "langchain-mcp-adapters>=0.3" "mcp>=1.28" \
-        "langchain-openai>=1.3" "apscheduler>=3.11" && break || \
+        "langchain-openai>=1.3" "apscheduler>=3.11" \
+        "aiosqlite>=0.20" "langgraph-checkpoint-sqlite>=2.0" && break || \
         echo "pip 安装重试 $i/5..." && sleep 5; \
     done && \
     python3 -c "import uvicorn, fastapi, langchain, langgraph; print('依赖验证通过')"
@@ -57,7 +58,19 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
 # 安装 Playwright Chromium（@playwright/mcp 需要）
 # 同时预装 MCP filesystem 服务器，避免 npx 缓存损坏导致加载 0 工具
 # npm 用淘宝镜像，浏览器从官方 CDN 下载（淘宝镜像不含 Chrome for Testing）
-RUN npm install -g @playwright/mcp @modelcontextprotocol/server-filesystem && \
+# 显式安装 zod 解决 @modelcontextprotocol/server-filesystem 的 ESM 解析问题
+# 直接全局安装，避免运行时 npx -y 临时下载导致 bin 链接丢失
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set fetch-timeout 600000 && \
+    for i in 1 2 3; do \
+        npm install -g @playwright/mcp @modelcontextprotocol/server-filesystem zod && break || \
+        echo "npm 全局安装重试 $i/3..." && sleep 5; \
+    done && \
+    test -f $(npm prefix -g)/lib/node_modules/@playwright/mcp/package.json && \
+    test -f $(npm prefix -g)/lib/node_modules/@modelcontextprotocol/server-filesystem/package.json && \
+    test -f $(npm prefix -g)/lib/node_modules/zod/package.json && \
+    test -x $(npm prefix -g)/bin/playwright-mcp && \
+    test -x $(npm prefix -g)/bin/mcp-server-filesystem && \
     for i in 1 2 3; do \
         unset PLAYWRIGHT_DOWNLOAD_HOST && \
         npx @playwright/mcp install-browser chrome-for-testing && break || \
