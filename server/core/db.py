@@ -186,6 +186,31 @@ class Database:
         conn = self._get_conn()
         conn.commit()
 
+    def transaction(self):
+        """事务上下文管理器。
+
+        用法：
+            with db.transaction() as conn:
+                conn.execute(...)
+                conn.execute(...)
+            # 正常退出自动 commit，异常自动 rollback
+
+        Returns:
+            sqlite3.Connection（在 with 块内可直接使用，无需再调 commit）
+        """
+        import contextlib
+        conn = self._get_conn()
+
+        @contextlib.contextmanager
+        def _tx():
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return _tx()
+
     def close(self) -> None:
         """关闭当前线程的连接。"""
         if hasattr(self._local, "conn") and self._local.conn:

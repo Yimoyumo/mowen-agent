@@ -44,3 +44,12 @@ uploads/
 # ==================== 临时调试文件 ====================
 deepseek-api-docs.md
 page-content.yml
+page_snapshot.md
+
+# ==================== 构建产物 / 临时压缩包 ====================
+*.tar.gz
+mowen-app.tar.gz
+mowen-sandbox.tar.gz
+
+# ==================== 临时截图 ====================
+siliconflow_embeddings.png

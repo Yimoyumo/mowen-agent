@@ -5,9 +5,12 @@ import type { ChatMessage, Conversation } from '@/types/api'
 
 // ==================== 会话操作 ====================
 
-/** 列出所有会话（不含消息） */
-export async function listConversations(): Promise<Conversation[]> {
-  const { data } = await apiClient.get('/conversations')
+/** 列出所有会话（不含消息）。
+ *  @param since 可选时间戳（毫秒），只返回 updatedAt > since 的会话（增量同步）
+ */
+export async function listConversations(since?: number): Promise<Conversation[]> {
+  const params = since ? { since } : {}
+  const { data } = await apiClient.get('/conversations', { params })
   return data.conversations ?? []
 }
 

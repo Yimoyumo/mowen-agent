@@ -93,11 +93,21 @@ class ConversationStore:
             "createdAt": created_at, "updatedAt": updated_at,
         }
 
-    def list_conversations(self) -> list[dict]:
-        """列出所有会话（不含消息），按更新时间倒序。"""
-        rows = db.execute(
-            "SELECT * FROM conversations ORDER BY updated_at DESC"
-        ).fetchall()
+    def list_conversations(self, since: int | None = None) -> list[dict]:
+        """列出所有会话（不含消息），按更新时间倒序。
+
+        Args:
+            since: 可选，只返回 updated_at > since 的会话（用于增量同步）
+        """
+        if since is not None:
+            rows = db.execute(
+                "SELECT * FROM conversations WHERE updated_at > ? ORDER BY updated_at DESC",
+                (since,),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT * FROM conversations ORDER BY updated_at DESC"
+            ).fetchall()
         return [_row_to_conv(r) for r in rows]
 
     def get_conversation(self, conv_id: str) -> dict | None:
@@ -242,28 +252,60 @@ class ConversationStore:
         """批量同步：从前端 localStorage 导入所有会话和消息。
 
         策略：UPSERT（存在则更新，不存在则插入）。
+        整个操作在单个事务中执行：中途任何错误都会全部回滚，保证原子性。
         适用于首次启用后端持久化时的一次性导入。
 
         Returns:
             {"synced_conversations": int, "synced_messages": int}
         """
+        import time
         conv_count = 0
         msg_count = 0
-        for conv in conversations:
-            # 写入会话
-            self.create_conversation(
-                conv["id"],
-                conv.get("title", "新对话"),
-                conv.get("kbId"),
-                conv.get("createdAt"),
-                conv.get("updatedAt"),
-            )
-            conv_count += 1
 
-            # 写入消息
-            for msg in conv.get("messages", []):
-                self.add_message(conv["id"], msg)
-                msg_count += 1
+        with db.transaction() as conn:
+            for conv in conversations:
+                now = int(time.time() * 1000)
+                created_at = conv.get("createdAt") or now
+                updated_at = conv.get("updatedAt") or now
+
+                # 写会话（UPSERT）
+                conn.execute(
+                    """INSERT INTO conversations (id, title, kb_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET
+                         title=excluded.title,
+                         kb_id=excluded.kb_id,
+                         updated_at=excluded.updated_at""",
+                    (conv["id"], conv.get("title", "新对话"), conv.get("kbId"),
+                     created_at, updated_at),
+                )
+                conv_count += 1
+
+                # 写消息（UPSERT，不走 add_message 避免多次 commit）
+                for msg in conv.get("messages", []):
+                    conn.execute(
+                        """INSERT INTO messages
+                           (id, conversation_id, role, content, reasoning, contexts, segments, files, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(id) DO UPDATE SET
+                             content=excluded.content,
+                             reasoning=excluded.reasoning,
+                             contexts=excluded.contexts,
+                             segments=excluded.segments,
+                             files=excluded.files""",
+                        (
+                            msg.get("id", ""),
+                            conv["id"],
+                            msg.get("role", "user"),
+                            msg.get("content", ""),
+                            msg.get("reasoning", ""),
+                            json.dumps(msg.get("contexts", []), ensure_ascii=False),
+                            json.dumps(msg.get("segments", []), ensure_ascii=False),
+                            json.dumps(msg.get("files", []), ensure_ascii=False),
+                            msg.get("createdAt", 0),
+                        ),
+                    )
+                    msg_count += 1
 
         logger.info("批量同步完成: %d 会话, %d 消息", conv_count, msg_count)
         return {"synced_conversations": conv_count, "synced_messages": msg_count}
