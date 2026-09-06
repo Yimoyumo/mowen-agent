@@ -30,6 +30,7 @@ _SANDBOX_MEMORY = "512m"
 _SANDBOX_MEMORY = "256m"   # 2核4G 服务器降为 256m（pandas 10万行仍可跑）
 _SANDBOX_CPU = 1.0
 _DEFAULT_TIMEOUT = 60          # 默认命令超时（秒）
+_BYTES_CAP = 20 * 1024 * 1024  # read_bytes 二进制读取上限（20MB，图片压缩前兜底）
 
 _DOWNLOADS_DIR = Path("downloads")  # 文件导出目录
 _UPLOADS_DIR = Path("uploads")      # 用户上传暂存目录
@@ -136,7 +137,34 @@ class Sandbox:
         exit_code, output = self.exec(f"cat {_resolve_path(path)}")
         if exit_code != 0:
             return f"（文件不存在或无法读取: {path}）"
+        # 二进制检测：内容含 NUL 字节视为二进制，给出明确提示而非乱码
+        if "\x00" in output[:8192]:
+            return (f"（{path} 是二进制文件，无法作为文本读取。"
+                    f"可使用 run_command 配合 file / strings 等命令分析）")
         return output
+
+    def read_bytes(self, path: str, timeout: int = _DEFAULT_TIMEOUT) -> bytes:
+        """读取沙盒中的文件原始字节（供图片查看等二进制场景）。
+
+        Raises:
+            FileNotFoundError: 文件不存在或读取失败
+            ValueError: 文件超出大小上限
+        """
+        try:
+            self._container.reload()
+        except Exception:
+            logger.warning("沙盒容器已关闭: session=%s container=%s",
+                            getattr(self, '_session_id', '?'), self.container_id)
+            raise FileNotFoundError(path)
+
+        wrapped = f"timeout {timeout} sh -c {_quote(f'cat {_resolve_path(path)}')}"
+        result = self._container.exec_run(["sh", "-c", wrapped], user="root", demux=False)
+        if (result.exit_code or 0) != 0:
+            raise FileNotFoundError(path)
+        data = result.output or b""
+        if len(data) > _BYTES_CAP:
+            raise ValueError(f"文件过大（>{_BYTES_CAP // (1024 * 1024)}MB），无法读取")
+        return data
 
     def list_dir(self, path: str = "/workspace") -> str:
         """列出目录内容（ls -lah）。"""

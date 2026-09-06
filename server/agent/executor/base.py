@@ -91,6 +91,15 @@ class WorkspaceExecutor(ABC):
         """读取工作区中的文件内容。"""
 
     @abstractmethod
+    async def read_bytes(self, session_id: str, path: str) -> bytes:
+        """读取工作区中的文件原始字节（供图片查看等二进制场景）。
+
+        Raises:
+            FileNotFoundError: 文件不存在
+            ValueError: 文件超出大小上限
+        """
+
+    @abstractmethod
     async def list_dir(self, session_id: str, path: str = "") -> str:
         """列出工作区中某个目录的内容（ls -lah 风格）。"""
 

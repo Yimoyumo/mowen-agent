@@ -29,6 +29,7 @@ from tavily import TavilyClient
 from server.agent import interaction, ops_audit
 from server.agent.executor import get_executor
 from server.agent.executor.base import new_op_id
+from server.agent.image_utils import compress_image_to_data_url
 from server.agent.permissions import (
     Decision,
     apply_approval_mode,
@@ -41,6 +42,9 @@ from server.retrieval.retriever import expand_and_retrieve
 from server.rag.chain import _resolve_collection_name
 
 logger = get_logger(__name__)
+
+# 视为图片的扩展名（与 graph.py 上传图片的判定保持一致）
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
 
 # ==================== 运行时上下文 ====================
@@ -508,9 +512,38 @@ async def edit_file(path: str, old_text: str, new_text: str) -> str:
     return f"✓ 已替换 {path} (第 {lines_before + 1} 行)\n```{context}```"
 
 
+async def _read_image_as_block(session_id: str, path: str) -> "str | list":
+    """读取工作区图片，按模型能力返回多模态内容或提示文本。
+
+    视觉模型：复用上传图片同一套压缩流程，以 image_url content block
+    返回，包装为多模态 ToolMessage 供模型直接查看。
+    非视觉模型：返回明确的提示文本，告知无法看图及可行替代方案。
+    """
+    executor = _get_executor()
+    try:
+        data = await executor.read_bytes(session_id, path)
+    except FileNotFoundError:
+        return f"（文件不存在或无法读取: {path}）"
+    except (OSError, ValueError) as exc:
+        return f"（读取失败: {exc}）"
+
+    if not _get_config().has_active_model_vision():
+        return (f"（{path} 是图片文件（约 {max(1, len(data) // 1024)}KB）。"
+                f"当前模型不支持视觉，无法直接查看图片内容；"
+                f"可使用 export_file 将图片展示给用户，或更换支持视觉的模型后重试。）")
+
+    data_url = compress_image_to_data_url(data)
+    if not data_url:
+        return f"（图片解码失败，文件可能已损坏: {path}）"
+    return [
+        {"type": "text", "text": f"已读取工作区图片 {path}，内容如下（已压缩以便查看）："},
+        {"type": "image_url", "image_url": {"url": data_url}},
+    ]
+
+
 @tool
-async def read_file(path: str) -> str:
-    """读取工作区中的文件内容。"""
+async def read_file(path: str) -> "str | list":
+    """读取工作区中的文件内容。图片文件在视觉模型下会以图像形式返回，由模型直接查看。"""
     executor = _get_executor()
     session_id = _get_session_id()
     ex_cfg = get_tools_config()
@@ -528,6 +561,9 @@ async def read_file(path: str) -> str:
         )
         if not ok:
             return _approval_fail_message(path, session_id)
+    # 图片文件：视觉模型看图 / 非视觉模型明确提示
+    if Path(path).suffix.lower() in _IMAGE_EXTS:
+        return await _read_image_as_block(session_id, path)
     try:
         return await executor.read_file(session_id, path)
     except Exception as exc:

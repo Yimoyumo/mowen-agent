@@ -34,6 +34,7 @@ _DOWNLOADS_DIR = Path("downloads")                # 文件导出目录（与 /ap
 
 _MAX_OUTPUT_BYTES = 256 * 1024      # 命令输出累计上限（256KB），超出后截断并杀进程
 _READ_CAP = 200 * 1024              # read_file 单文件读取上限（200KB）
+_BYTES_CAP = 20 * 1024 * 1024       # read_bytes 二进制读取上限（20MB，图片压缩前兜底）
 _READ_CHUNK = 8192                  # 输出读取块大小
 _SIGKILL_WAIT = 3                   # SIGTERM 后等待秒数，超时则 SIGKILL
 
@@ -321,6 +322,13 @@ class HostExecutor(WorkspaceExecutor):
         except OSError as exc:
             logger.warning("读取文件失败: %s err=%s", path, exc)
             return f"（文件不存在或无法读取: {path}）"
+
+        # 二进制检测：文件头含 NUL 字节视为二进制（与 git 判定一致），
+        # 给出明确提示而非误报"不存在"
+        if b"\x00" in data[:8192]:
+            return (f"（{path} 是二进制文件，无法作为文本读取。"
+                    f"可使用 run_command 配合 file / strings / xxd 等命令分析）")
+
         if len(data) > self._read_cap:
             data = data[: self._read_cap]
             text = data.decode("utf-8", errors="replace")
@@ -328,7 +336,26 @@ class HostExecutor(WorkspaceExecutor):
         try:
             return data.decode("utf-8")
         except UnicodeDecodeError:
-            return f"（文件不存在或无法读取: {path}）"
+            return (f"（{path} 不是有效的 UTF-8 文本（可能为二进制文件），无法作为文本读取。"
+                    f"可尝试 run_command 配合 file / iconv 等命令分析）")
+
+    async def read_bytes(self, session_id: str, path: str) -> bytes:
+        """读取工作区中的文件原始字节（供图片查看等二进制场景）。"""
+        ws = self.workspace_root(session_id)
+        try:
+            target = self._safe_ws_path(ws, path)
+        except ValueError as exc:
+            raise FileNotFoundError(path) from exc
+        if not target.is_file():
+            raise FileNotFoundError(path)
+
+        def _read():
+            return target.read_bytes()
+
+        data = await asyncio.to_thread(_read)
+        if len(data) > _BYTES_CAP:
+            raise ValueError(f"文件过大（>{_BYTES_CAP // (1024 * 1024)}MB），无法读取")
+        return data
 
     async def list_dir(self, session_id: str, path: str = "") -> str:
         """列出工作区目录内容（ls -lah）。"""

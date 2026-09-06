@@ -19,6 +19,7 @@ from langchain.agents import create_agent
 from server.core.config import RAGConfig
 from server.llm.factory import get_chat_model
 from server.agent import interaction
+from server.agent.image_utils import compress_image_to_data_url
 from server.agent.tools import get_agent_tools, set_agent_context
 from server.agent.executor import get_executor
 from server.agent.checkpointer import get_checkpointer
@@ -232,38 +233,6 @@ async def chat_stream(
 
 # ==================== 内部实现 ====================
 
-def _compress_and_encode_image(filepath: str, max_size: int = 1024, quality: int = 75) -> str | None:
-    """压缩图片并返回 base64 编码。
-
-    将图片缩小到 max_size px（最长边），转 JPEG 压缩，
-    大幅减少 token 消耗。典型效果：2MB PNG → 80KB JPEG → ~20K tokens。
-
-    Returns:
-        base64 编码字符串，失败返回 None
-    """
-    import io
-    import base64
-    from PIL import Image
-
-    try:
-        img = Image.open(filepath)
-        w, h = img.size
-        if max(w, h) > max_size:
-            ratio = max_size / max(w, h)
-            img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=quality, optimize=True)
-        raw = buf.getvalue()
-        logger.debug("图片压缩: %s (%dx%d → %dx%d, %d bytes)",
-                     filepath, w, h, img.width, img.height, len(raw))
-        return base64.b64encode(raw).decode("utf-8")
-    except Exception as e:
-        logger.warning("图片压缩失败: %s (%s)", filepath, e)
-        return None
-
-
 def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None, uploaded_files: list[dict] | None = None) -> tuple[list, int]:
     """将前端消息列表转为 LangChain 消息对象。
 
@@ -306,7 +275,7 @@ def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None, u
                 for f in image_files:
                     host_path = f"uploads/{f['token']}/{f['filename']}"
                     try:
-                        b64 = _compress_and_encode_image(host_path)
+                        b64 = compress_image_to_data_url(host_path)
                         if b64:
                             multimodal_content.append({
                                 "type": "image_url",

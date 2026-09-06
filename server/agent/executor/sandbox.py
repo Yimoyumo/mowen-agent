@@ -88,6 +88,11 @@ class SandboxExecutor(WorkspaceExecutor):
         sb = self._sandbox(session_id)
         return await asyncio.to_thread(sb.read_file, path)
 
+    async def read_bytes(self, session_id: str, path: str) -> bytes:
+        """读取沙盒中的文件原始字节（供图片查看等二进制场景）。"""
+        sb = self._sandbox(session_id)
+        return await asyncio.to_thread(sb.read_bytes, path)
+
     async def list_dir(self, session_id: str, path: str = "") -> str:
         """列出沙盒目录内容。"""
         sb = self._sandbox(session_id)
