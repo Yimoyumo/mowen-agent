@@ -89,6 +89,23 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );
+
+-- 宿主操审计（host_ops）：记录 Agent 在宿主机上的命令/文件/审批操作
+CREATE TABLE IF NOT EXISTS host_ops (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    kind TEXT NOT NULL,                -- run / file / host_tool（搜索与安装技能等宿主工具）
+    target TEXT DEFAULT '',
+    risk TEXT DEFAULT '',
+    status TEXT NOT NULL,              -- pending_approval/approved/denied/timeout/running/succeeded/failed/killed
+    exit_code INTEGER,
+    output_digest TEXT DEFAULT '',
+    created_at INTEGER NOT NULL,
+    finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_host_ops_session ON host_ops(session_id);
 """
 
 

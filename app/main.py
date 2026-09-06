@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 
     start_cleanup_task()
 
-    # 初始化 Agent Checkpointer（SQLite 持久化短期记忆）
+    # 初始化 Agent Checkpointer（与业务库共用一份 SQLite，持久化短期记忆）
     await get_checkpointer()
 
     # 启动定时任务调度器（自动从 DB 恢复活跃任务）
@@ -55,12 +55,12 @@ async def lifespan(app: FastAPI):
         await memory_store.flush_pending_extraction()
     except Exception as exc:
         logger.warning("记忆提取失败: %s", exc)
-    # 销毁所有沙盒容器
+    # 关闭前清理：销毁全部工作区（host 模式）/ 沙盒（sandbox 模式）
     try:
-        from server.agent.sandbox import destroy_all
-        destroy_all()
+        from server.agent.executor import get_executor
+        get_executor().destroy_all()
     except Exception as exc:
-        logger.warning("关闭沙盒池失败: %s", exc)
+        logger.warning("关闭执行器失败: %s", exc)
     # 关闭 Checkpointer 连接
     try:
         await close_checkpointer()
@@ -167,7 +167,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 # 导入并注册路由模块
-from app.routes import chat, config, conversations, files, knowledge_bases, memory, scheduled_tasks, settings  # noqa: E402
+from app.routes import chat, config, conversations, files, host_ops, interactions, knowledge_bases, memory, scheduled_tasks, settings  # noqa: E402
 
 app.include_router(chat.router, prefix="/api", tags=["对话"])
 app.include_router(conversations.router, prefix="/api", tags=["会话历史"])
@@ -177,3 +177,5 @@ app.include_router(knowledge_bases.router, prefix="/api", tags=["知识库"])
 app.include_router(memory.router, prefix="/api", tags=["记忆"])
 app.include_router(scheduled_tasks.router, prefix="/api", tags=["定时任务"])
 app.include_router(settings.router, prefix="/api", tags=["用户设置"])
+app.include_router(interactions.router, prefix="/api", tags=["人机交互"])
+app.include_router(host_ops.router, prefix="/api", tags=["执行状态"])

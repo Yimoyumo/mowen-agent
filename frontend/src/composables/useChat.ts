@@ -1,11 +1,12 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { chatStream } from '@/api/chat'
+import { getPendingInteractions } from '@/api/hostApi'
 import { apiClient } from '@/api/config'
 import { useChatStore } from '@/stores/chat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { callWithRetry } from '@/utils/retry'
-import type { ChatMessage } from '@/types/api'
+import type { AnswerInteractionPayload, ChatMessage } from '@/types/api'
 
 function loadBool(key: string, fallback: boolean): boolean {
   try {
@@ -176,6 +177,10 @@ export function useChat() {
     // 确保有当前会话
     const conv = store.ensureCurrentConversation()
 
+    // 恢复该会话遗留的待处理交互（审批 / ask_user 卡片）。
+    // 若后端接口未就绪或时间紧张可跳过；这里尽力恢复，不阻塞发消息。
+    restorePendingInteractions(conv.id)
+
     // 同步会话的 KB 设置
     store.setConversationKb(conv.id, kbStore.currentKbId)
 
@@ -248,6 +253,19 @@ export function useChat() {
             store.updateMessage(conv.id, assistantMsg.id, { segments: segs })
             _syncStreamedContent(conv.id, assistantMsg.id)
           }
+        },
+        onInteractionRequest: (request) => {
+          store.addPendingInteraction(request, conv.id, assistantMsg.id)
+          store.markToolSegmentWaiting(conv.id, assistantMsg.id, request)
+          _syncStreamedContent(conv.id, assistantMsg.id)
+        },
+        onInteractionResult: (result) => {
+          store.resolveInteraction(result.request_id, result)
+          _syncStreamedContent(conv.id, assistantMsg.id)
+        },
+        onExecUpdate: (update) => {
+          store.updateExecStatus(update)
+          _syncStreamedContent(conv.id, assistantMsg.id)
         },
         onToken: (token) => {
           const msg = store.currentConversation?.messages.find(m => m.id === assistantMsg.id)
@@ -371,6 +389,24 @@ export function useChat() {
     question.value = value
   }
 
+  /** 恢复会话遗留的待处理交互（页面刷新后卡片重现） */
+  async function restorePendingInteractions(sessionId: string) {
+    try {
+      const res = await getPendingInteractions(sessionId)
+      for (const req of res.requests) {
+        store.addPendingInteraction(req)
+        // 若已有 segment 携带该 requestId（从后端恢复的），仅补登记；不主动创建
+      }
+    } catch {
+      // 后端接口未就绪 / 无待处理，静默忽略
+    }
+  }
+
+  /** 提交交互回答（审批 / ask_user），返回是否成功 */
+  async function answerInteraction(requestId: string, payload: AnswerInteractionPayload) {
+    return store.answerInteraction(requestId, payload)
+  }
+
   return {
     question,
     loading,
@@ -388,5 +424,7 @@ export function useChat() {
     createNewConversation,
     clearAllConversations,
     setQuestion,
+    answerInteraction,
+    pendingInteractions: store.pendingInteractions,
   }
 }

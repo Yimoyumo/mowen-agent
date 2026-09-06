@@ -1,10 +1,11 @@
 """文件清理模块。
 
-定期清理 uploads/ 和 downloads/ 目录中的过期文件，防止磁盘耗尽。
+定期清理 uploads/、downloads/ 中的过期文件，并进行会话工作区保留清理，防止磁盘耗尽。
 
 清理策略：
-- uploads/：用户上传的文件，超过 1 小时未访问则删除（对话已结束，不再需要）
+- uploads/：用户上传的文件，超过 24 小时未访问则删除（对话已结束，不再需要）
 - downloads/：沙盒导出的文件，超过 24 小时则删除（用户已下载或不再需要）
+- data/host_workspaces/：会话工作区，mtime 超过 executor.workspace_retention_days（默认 7 天）的会话目录删除
 
 触发方式：
 - 应用启动时自动执行一次（清理上次运行遗留的文件）
@@ -86,12 +87,41 @@ async def _cleanup_loop():
         run_cleanup()
 
 
+def _cleanup_workspaces() -> int:
+    """清理过期的会话工作区（工作区保留策略）。
+
+    读取执行器配置：
+    - workspace_root：工作区根目录（默认 data/host_workspaces）
+    - workspace_retention_days：保留天数（默认 7），目录 mtime 超过该天数则删除。
+
+    只清理 HostExecutor 会创建的会话目录（数据来自 data/host_workspaces/ 下的子目录），
+    不触碰 uploads/ 与 downloads/ 的清理逻辑。
+    """
+    from server.core.config import RAGConfig
+
+    try:
+        cfg = RAGConfig.from_settings()
+    except Exception as exc:
+        logger.warning("读取执行器配置失败，跳过工作区清理: %s", exc)
+        return 0
+
+    ex_cfg = cfg.executor_config or {}
+    ws_root = Path(ex_cfg.get("workspace_root") or "data/host_workspaces")
+    retention_days = int(ex_cfg.get("workspace_retention_days") or 7)
+    if retention_days <= 0:
+        logger.info("工作区保留天数 <= 0，跳过工作区清理")
+        return 0
+    max_age = retention_days * 86400
+    return _cleanup_dir(ws_root, max_age)
+
+
 def run_cleanup():
     """执行一次清理。"""
     u = _cleanup_dir(_UPLOADS_DIR, _UPLOADS_MAX_AGE)
     d = _cleanup_dir(_DOWNLOADS_DIR, _DOWNLOADS_MAX_AGE)
-    if u or d:
-        logger.info("文件清理完成 | uploads=%d downloads=%d", u, d)
+    w = _cleanup_workspaces()
+    if u or d or w:
+        logger.info("文件清理完成 | uploads=%d downloads=%d workspaces=%d", u, d, w)
 
 
 # 后台任务句柄

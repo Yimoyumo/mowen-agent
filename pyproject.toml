@@ -33,6 +33,8 @@ dependencies = [
     "apscheduler==3.11.3",
     "aiosqlite>=0.20",
     "pillow>=12.3.0",
+    "html2text>=2024.2.26",
+    "chardet>=5.2.0",
 ]
 
 [project.optional-dependencies]

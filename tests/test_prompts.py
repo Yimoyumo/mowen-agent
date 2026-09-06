@@ -36,13 +36,23 @@ class TestGetAgentSystemPrompt:
 
     def test_contains_tools(self):
         prompt = get_agent_system_prompt()
-        assert "sandbox_run" in prompt
+        assert "run_command" in prompt
+        assert "write_file" in prompt
+        assert "read_file" in prompt
+        assert "export_file" in prompt
+        assert "ask_user" in prompt
         assert "search_knowledge_base" in prompt
         assert "fetch_webpage" in prompt
-        assert "sandbox_export_file" in prompt
 
     def test_contains_sandbox_section(self):
         prompt = get_agent_system_prompt()
+        # host 模式默认输出"执行环境说明"
+        assert "执行环境" in prompt
+        assert "工作区" in prompt
+
+    def test_sandbox_mode_env(self):
+        """sandbox 模式输出旧"沙盒说明"（Docker 容器 /workspace）。"""
+        prompt = get_agent_system_prompt(config=RAGConfig(executor_mode="sandbox"))
         assert "沙盒" in prompt
         assert "/workspace" in prompt
 
@@ -104,8 +114,8 @@ class TestPromptSections:
 
     def test_tools_has_all_tools(self):
         tool_names = [
-            "sandbox_run", "sandbox_write_file", "sandbox_edit_file",
-            "sandbox_read_file", "sandbox_list_files", "sandbox_export_file",
+            "run_command", "write_file", "edit_file",
+            "read_file", "list_files", "export_file", "ask_user",
             "search_knowledge_base", "search_web", "fetch_webpage",
             "load_skill", "search_skills", "install_skill",
             "export_mcp_file", "list_mcp_files",
@@ -114,11 +124,12 @@ class TestPromptSections:
             assert name in _TOOLS, f"提示词缺少工具: {name}"
 
     def test_sandbox_has_limits(self):
-        assert "512MB" in _SANDBOX or "内存" in _SANDBOX
         assert "超时" in _SANDBOX
+        assert "权限审批" in _SANDBOX
+        assert "工作区" in _SANDBOX
 
     def test_tool_principles_has_when_to_use(self):
-        assert "何时用沙盒" in _TOOL_PRINCIPLES
+        assert "何时运行命令" in _TOOL_PRINCIPLES
         assert "何时用知识库" in _TOOL_PRINCIPLES
         assert "何时用浏览器" in _TOOL_PRINCIPLES
 

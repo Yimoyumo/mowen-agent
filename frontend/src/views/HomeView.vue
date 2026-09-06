@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ChatArea from '@/components/chat/ChatArea.vue'
 import ContextPanel from '@/components/chat/ContextPanel.vue'
+import HostOpsPanel from '@/components/chat/HostOpsPanel.vue'
 import { useConfig } from '@/composables/useConfig'
 import { useChat } from '@/composables/useChat'
 import { useKnowledgeBaseManager } from '@/composables/useKnowledgeBase'
@@ -38,6 +39,7 @@ const chatStore = useChatStore()
 
 const sidebarCollapsed = ref(false)
 const showContext = ref(false)
+const showHostOps = ref(false)
 
 // 获取有上下文的消息
 const contextMessages = computed(() =>
@@ -139,6 +141,7 @@ onMounted(() => {
       @remove-conversation="handleRemoveConversation"
       @clear-conversations="handleClearConversations"
       @new-conversation="createNewConversation"
+      @open-host-ops="showHostOps = true"
     />
 
     <div class="main-wrapper" :class="{ 'context-open': showContext }">
@@ -174,6 +177,8 @@ onMounted(() => {
       :visible="showContext"
       @close="toggleContext"
     />
+
+    <HostOpsPanel v-model="showHostOps" :session-id="chatStore.currentId" />
   </div>
 </template>
 

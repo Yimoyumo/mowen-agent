@@ -108,7 +108,6 @@ def download_file(token: str, filename: str) -> FileResponse:
     """下载沙盒导出的文件。
 
     URL 格式: /api/download/{token}/{filename}
-    token 和 filename 由 sandbox_export_file 工具生成。
     """
     # 清理 filename 防止路径穿越
     safe_filename = Path(filename).name

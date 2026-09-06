@@ -168,6 +168,7 @@ class TestGetEmbeddingsCustom:
             mock_cls.assert_called_once_with(
                 api_key="sk-custom",
                 model="text-embedding-3-small",
+                check_embedding_ctx_length=False,
                 base_url="https://api.example.com/v1",
             )
 
@@ -191,6 +192,7 @@ class TestGetEmbeddingsCustom:
             mock_cls.assert_called_once_with(
                 api_key="sk-456",
                 model="embedding-3",
+                check_embedding_ctx_length=False,
                 base_url="https://open.bigmodel.cn/api/paas/v4",
             )
 
@@ -214,5 +216,6 @@ class TestGetEmbeddingsCustom:
             mock_cls.assert_called_once_with(
                 api_key="sk-456",
                 model="embedding-3",
+                check_embedding_ctx_length=False,
                 base_url="https://open.bigmodel.cn/api/paas/v4",
             )

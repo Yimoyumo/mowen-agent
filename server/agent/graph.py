@@ -18,7 +18,9 @@ from langchain.agents import create_agent
 
 from server.core.config import RAGConfig
 from server.llm.factory import get_chat_model
+from server.agent import interaction
 from server.agent.tools import get_agent_tools, set_agent_context
+from server.agent.executor import get_executor
 from server.agent.checkpointer import get_checkpointer
 from server.core.logging_config import get_logger
 
@@ -140,42 +142,33 @@ async def chat_stream(
     from server.agent.mcp import load_mcp_tools
     mcp_tools = await load_mcp_tools(config.mcp_servers or {})
 
-    # 沙盒：按 session_id 获取或创建（跨消息持久化）
-    from server.agent.sandbox import get_or_create as get_or_create_sandbox
-    sb = None
-    if session_id:
-        sb = get_or_create_sandbox(session_id)
-        logger.debug("沙盒就绪: session=%s container=%s", session_id, sb.container_id)
-    else:
-        logger.debug("无 session_id，沙盒不可用")
+    # 统一执行器：按 session_id 获取工作区（跨消息持久化）
+    executor = get_executor(config)
 
-    # 将用户上传的文件导入沙盒
+    # UI 开关：流式开启人机交互（审批/提问）；非流式关闭（no_ui 快速返回）
+    interaction.set_ui_enabled(stream)
+
+    # 将用户上传的文件导入工作区（图片由视觉模型直接看，跳过处理）
     uploaded_info = ""
-    if uploaded_files and sb:
+    if uploaded_files:
         parts = []
         image_count = 0
         for f in uploaded_files:
             host_path = f"uploads/{f['token']}/{f['filename']}"
-            # 图片不导入沙盒（视觉模型直接看图，沙盒不需要处理图片）
             suffix = Path(f["filename"]).suffix.lower() if f.get("filename") else ""
             if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}:
                 image_count += 1
                 continue
-            dest = sb.import_file(host_path)
+            dest = await executor.import_file(session_id, str(host_path)) if session_id else None
             if dest:
                 parts.append(f"- {f['filename']} → {dest}")
             else:
                 parts.append(f"- {f['filename']} → 导入失败")
         if parts:
-            uploaded_info = "(系统提示：用户本次上传了以下文件，已导入沙盒，可直接处理。)\n" + "\n".join(parts)
-
-        # 记录文件到沙盒管理器，沙盒重建时自动重新导入
-        if uploaded_files:
-            from server.agent.sandbox import track_session_files
-            track_session_files(session_id, uploaded_files)
+            uploaded_info = "(系统提示：用户本次上传了以下文件，已放入工作区，可直接处理。)\n" + "\n".join(parts)
 
         if image_count > 0 and config and config.has_active_model_vision():
-            hint = "（系统提示：用户上传了图片，图片内容已直接展示在你的视野中。请直接观察并回答图片相关问题，无需调用工具查看或处理图片。仅当用户明确要求编辑/转换图片时才使用沙盒工具。）"
+            hint = "（系统提示：用户上传了图片，图片内容已直接展示在你的视野中。请直接观察并回答图片相关问题，无需调用工具查看或处理图片。仅当用户明确要求编辑/转换图片时才使用文件工具。）"
             uploaded_info = (uploaded_info + "\n\n" + hint) if uploaded_info else hint
 
     try:
@@ -366,20 +359,52 @@ def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None, u
 async def _stream_agent(messages: list, show_reasoning: bool, extra_tools: list = None, config: RAGConfig | None = None, uploaded_info: str = "", memory_prompt: str = "", persona_prompt: str = "", profile_prompt: str = "", thread_id: str = "default"):
     """流式执行 Agent，逐 token / 工具事件输出。
 
+    通过事件队列合并两类事件：
+    - graph 事件（on_chat_model_stream / on_tool_start / on_tool_end）
+    - interaction 事件（interaction_request / interaction_result / exec_update）
+
     Args:
         thread_id: Checkpointer thread_id，用于自动恢复/保存历史。
     """
     graph = await _build_graph(extra_tools=extra_tools, config=config, uploaded_info=uploaded_info, memory_prompt=memory_prompt, persona_prompt=persona_prompt, profile_prompt=profile_prompt)
 
+    # 设置事件队列（需在创建 pump 任务之前，使 pump 及其内部工具协程继承同一队列）
+    q: asyncio.Queue = asyncio.Queue()
+    interaction.set_event_queue(q)
+
+    async def _pump():
+        """后台任务：消费 graph 的 astream_events，压入队列。"""
+        try:
+            async for event in graph.astream_events(
+                {"messages": messages},
+                version="v2",
+                config={
+                    "recursion_limit": 100,
+                    "configurable": {"thread_id": thread_id},
+                },
+            ):
+                await q.put(("graph", event))
+        except Exception as exc:
+            await q.put(("graph_err", exc))
+        await q.put(("graph_done", None))
+
+    pump = asyncio.create_task(_pump())
+
     try:
-        async for event in graph.astream_events(
-            {"messages": messages},
-            version="v2",
-            config={
-                "recursion_limit": 100,
-                "configurable": {"thread_id": thread_id},
-            },
-        ):
+        while True:
+            kind, payload = await q.get()
+            if kind == "graph_done":
+                break
+            if kind == "graph_err":
+                logger.error("Agent 执行出错: %s", payload, exc_info=True)
+                yield {"type": "token", "token": f"\n\n（Agent 出错: {payload}）"}
+                break
+            if kind == "interaction":
+                # interaction_request / interaction_result / exec_update 直接透传
+                yield payload
+                continue
+
+            event = payload
             event_type = event.get("event", "")
 
             # -- LLM 流式输出的 token --
@@ -429,16 +454,24 @@ async def _stream_agent(messages: list, show_reasoning: bool, extra_tools: list 
                     "output": str(output)[:500],  # 截断过长输出
                 }
 
-                # sandbox_export_file 返回了图片 markdown，注入到消息流中直接渲染
-                if tool_name == "sandbox_export_file":
+                # export_file 返回了图片 markdown，注入到消息流中直接渲染
+                if tool_name == "export_file":
                     import re
                     img_re = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
                     for m in img_re.finditer(str(output)):
                         yield {"type": "token", "token": "\n\n" + m.group(0) + "\n\n"}
                         await asyncio.sleep(0)
-
     except Exception as exc:
         logger.error("Agent 执行出错: %s", exc, exc_info=True)
         yield {"type": "token", "token": f"\n\n（Agent 出错: {exc}）"}
+    finally:
+        # 清理：取消未完成的 pump 任务并清空事件队列
+        if not pump.done():
+            pump.cancel()
+            try:
+                await pump
+            except (asyncio.CancelledError, Exception):
+                pass
+        interaction.set_event_queue(None)
 
     yield {"type": "done"}

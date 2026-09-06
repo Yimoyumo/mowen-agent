@@ -39,6 +39,8 @@ class RAGConfig:
     skills: list = field(default_factory=list)
     logging: dict = field(default_factory=dict)
     deepseek_api_key: str = ""
+    executor_mode: str = "host"  # host（宿主机直操，默认）/ sandbox（Docker 沙盒回退）
+    executor_config: dict = field(default_factory=dict)  # 执行器配置（来自 settings["executor"]）
 
     @property
     def chat_provider(self) -> str:

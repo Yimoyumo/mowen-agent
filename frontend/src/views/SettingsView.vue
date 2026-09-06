@@ -9,6 +9,7 @@ import MemorySettings from '@/components/settings/MemorySettings.vue'
 import ProfileSettings from '@/components/settings/ProfileSettings.vue'
 import McpSettings from '@/components/settings/McpSettings.vue'
 import AgentSettings from '@/components/settings/AgentSettings.vue'
+import ExecutorSettings from '@/components/settings/ExecutorSettings.vue'
 import { useRouter } from 'vue-router'
 
 const {
@@ -147,6 +148,15 @@ function doAddProvider(name: string, baseUrl: string, apiKey: string, callback: 
             :tavily-api-key="agentSettings.tavily_api_key"
             :saving="saving"
             @save="handleSaveAgentSettings"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="执行器" name="executor">
+          <ExecutorSettings
+            v-if="settings"
+            :executor="settings.executor"
+            :saving="saving"
+            @save="(cfg: any) => saveSettings({ executor: cfg })"
           />
         </el-tab-pane>
 

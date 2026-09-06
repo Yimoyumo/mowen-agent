@@ -13,6 +13,15 @@ export {
 } from './knowledgeBaseApi'
 export { chatStream } from './chat'
 
+// 宿主执行 & 交互（HITL）
+export {
+  answerInteraction,
+  getPendingInteractions,
+  getHostOps,
+  cancelHostOp,
+  getHostWorkspace,
+} from './hostApi'
+
 // 用户设置
 export {
   getSettings,

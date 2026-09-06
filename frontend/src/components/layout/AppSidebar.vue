@@ -28,6 +28,7 @@ const emit = defineEmits<{
   'remove-conversation': [id: string]
   'clear-conversations': []
   'new-conversation': []
+  'open-host-ops': []
 }>()
 
 const router = useRouter()
@@ -142,6 +143,10 @@ onMounted(loadExtensions)
     </div>
 
     <div class="sidebar-footer">
+      <button class="settings-btn" :title="collapsed ? '宿主执行状态' : ''" @click="emit('open-host-ops')">
+        <el-icon><Monitor /></el-icon>
+        <span v-if="!collapsed">宿主执行</span>
+      </button>
       <button class="settings-btn" :title="collapsed ? '定时任务' : ''" @click="goScheduledTasks">
         <el-icon><AlarmClock /></el-icon>
         <span v-if="!collapsed">定时任务</span>

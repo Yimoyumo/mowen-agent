@@ -1,7 +1,17 @@
 import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
-import type { ChatMessage, Conversation } from '@/types/api'
+import type {
+  ChatMessage,
+  Conversation,
+  ExecUpdateEvent,
+  InteractionRequest,
+  InteractionResultEvent,
+  InteractionResultStatus,
+  AnswerInteractionPayload,
+  ToolSegmentStatus,
+} from '@/types/api'
 import * as convApi from '@/api/conversations'
+import { answerInteraction as answerInteractionApi } from '@/api/hostApi'
 import { callWithRetry } from '@/utils/retry'
 
 const STORAGE_KEY = 'mowen-conversations'
@@ -90,6 +100,16 @@ export const useChatStore = defineStore('chat', () => {
   const syncing = ref(false)  // 是否正在从后端同步
   const backendSynced = ref(localStorage.getItem(SYNCED_KEY) === '1')
 
+  // ==================== 待处理交互（HITL：审批 / ask_user） ====================
+  // 运行时状态，不持久化。每个请求附带关联的消息位置，便于解析结果时定位 tool segment。
+
+  interface PendingInteractionEntry extends InteractionRequest {
+    _convId?: string
+    _msgId?: string
+  }
+
+  const pendingInteractions = ref<PendingInteractionEntry[]>([])
+
   const currentConversation = computed(() =>
     conversations.value.find(c => c.id === currentId.value) ?? null,
   )
@@ -155,7 +175,7 @@ export const useChatStore = defineStore('chat', () => {
             // 本地已有 -> 覆盖（以后端为准，其他 Tab 可能已更新）
             // 但如果本地正在流式输出该会话，跳过覆盖避免打断
             const local = conversations.value[idx]
-            const isStreaming = local.messages.some(m =>
+            const isStreaming = (local?.messages ?? []).some(m =>
               m.segments?.some(s => s.type === 'tool' && s.status === 'running')
             )
             if (!isStreaming) {
@@ -354,6 +374,195 @@ export const useChatStore = defineStore('chat', () => {
     broadcast(type, convId)
   }
 
+  // ==================== 待处理交互（HITL）操作 ====================
+
+  function getPendingInteraction(requestId: string): InteractionRequest | undefined {
+    return pendingInteractions.value.find(r => r.request_id === requestId)
+  }
+
+  function addPendingInteraction(request: InteractionRequest, convId?: string, msgId?: string) {
+    const entry: PendingInteractionEntry = { ...request, _convId: convId, _msgId: msgId }
+    pendingInteractions.value = [
+      ...pendingInteractions.value.filter(r => r.request_id !== request.request_id),
+      entry,
+    ]
+  }
+
+  function removePendingInteraction(requestId: string) {
+    pendingInteractions.value = pendingInteractions.value.filter(r => r.request_id !== requestId)
+  }
+
+  /** 通过 requestId 定位对应 tool segment 的位置 */
+  function findSegmentLoc(requestId: string): { convId: string; msgId: string; segIndex: number } | null {
+    for (const conv of conversations.value) {
+      for (const msg of conv.messages) {
+        const segs = msg.segments
+        if (!segs) continue
+        const idx = segs.findIndex(s => s.type === 'tool' && s.requestId === requestId)
+        if (idx !== -1) return { convId: conv.id, msgId: msg.id, segIndex: idx }
+      }
+    }
+    return null
+  }
+
+  /** 根据交互结果映射 tool segment 终态 */
+  function mapResultStatus(result: InteractionResultEvent): ToolSegmentStatus {
+    if (result.status === 'timeout') return 'timeout'
+    if (result.status === 'denied') return 'denied'
+    if (result.status === 'answered') {
+      if (result.approved === false) return 'denied'
+      return 'done'
+    }
+    return 'done'
+  }
+
+  /** 收到 interaction_request：标记对应 tool segment 为等待审批/回答并挂上 requestId */
+  function markToolSegmentWaiting(convId: string, msgId: string, request: InteractionRequest) {
+    const conv = conversations.value.find(c => c.id === convId)
+    if (!conv) return
+    const msg = conv.messages.find(m => m.id === msgId)
+    if (!msg) return
+
+    const segs = [...(msg.segments ?? [])]
+    const status: ToolSegmentStatus = request.kind === 'approval' ? 'waiting_approval' : 'waiting_answer'
+    const toolName = request.payload.tool
+
+    // 优先按工具名匹配最近的 running 段，否则取最近一个 running 段
+    let idx = -1
+    if (toolName) {
+      idx = segs.findIndex(s => s.type === 'tool' && s.tool === toolName && s.status === 'running')
+    }
+    if (idx === -1) {
+      idx = segs.length - 1
+      while (idx >= 0) {
+        const seg = segs[idx]
+        if (seg && seg.type === 'tool' && seg.status === 'running') break
+        idx--
+      }
+    }
+
+    if (idx === -1) {
+      // 无 running 段则创建一个占位 tool 段，保证卡片可渲染
+      segs.push({
+        type: 'tool',
+        tool: toolName || '工具',
+        status,
+        requestId: request.request_id,
+        risk: request.payload.risk,
+        input: request.payload.command,
+      })
+    } else {
+      const seg = segs[idx]!
+      if (seg.type === 'tool') {
+        segs[idx] = { ...seg, status, requestId: request.request_id, risk: request.payload.risk ?? seg.risk }
+      }
+    }
+    updateMessage(convId, msgId, { segments: segs })
+  }
+
+  /** 把 tool segment 置为终态（供 SSE interaction_result 与本地 answer 共用） */
+  function _applyTerminal(requestId: string, status: ToolSegmentStatus, answer?: string) {
+    const loc = findSegmentLoc(requestId)
+    if (!loc) return
+    const { convId, msgId, segIndex } = loc
+    const conv = conversations.value.find(c => c.id === convId)
+    const msg = conv?.messages.find(m => m.id === msgId)
+    if (!msg?.segments) return
+
+    const segs = [...msg.segments]
+    const seg = segs[segIndex]
+    if (!seg || seg.type !== 'tool') return
+
+    let output = seg.output
+    if (answer) {
+      output = (output ? output + '\n' : '') + `用户回答: ${answer}`
+    }
+    segs[segIndex] = { ...seg, status, output }
+    updateMessage(convId, msgId, { segments: segs })
+  }
+
+  /** 收到 interaction_result：移除待处理并把对应 segment 置终态 */
+  function resolveInteraction(requestId: string, result: InteractionResultEvent) {
+    removePendingInteraction(requestId)
+    const status = mapResultStatus(result)
+    _applyTerminal(requestId, status, result.status === 'answered' ? result.answer : undefined)
+  }
+
+  /** 收到 exec_update：更新对应 opId 的 segment 状态 */
+  function updateExecStatus(update: ExecUpdateEvent) {
+    // 依据 opId 定位 segment
+    let loc: { convId: string; msgId: string; segIndex: number } | null = null
+    outer:
+    for (const conv of conversations.value) {
+      for (const msg of conv.messages) {
+        const segs = msg.segments
+        if (!segs) continue
+        const idx = segs.findIndex(s => s.type === 'tool' && s.opId === update.op_id)
+        if (idx !== -1) {
+          loc = { convId: conv.id, msgId: msg.id, segIndex: idx }
+          break outer
+        }
+      }
+    }
+
+    // 未匹配到 opId：取当前会话最近的 running 段（并行开发容错）
+    if (!loc) {
+      const conv = currentConversation.value
+      const msg = conv?.messages.find(m => (m.segments ?? []).some(s => s.type === 'tool' && s.status === 'running'))
+      if (conv && msg) {
+        const segs = msg.segments ?? []
+        for (let i = segs.length - 1; i >= 0; i--) {
+          const seg = segs[i]
+          if (seg && seg.type === 'tool' && seg.status === 'running') {
+            loc = { convId: conv.id, msgId: msg.id, segIndex: i }
+            break
+          }
+        }
+      }
+    }
+
+    if (!loc) return
+    const { convId, msgId, segIndex } = loc
+    const conv = conversations.value.find(c => c.id === convId)
+    const msg = conv?.messages.find(m => m.id === msgId)
+    if (!msg?.segments) return
+
+    const segs = [...msg.segments]
+    const seg = segs[segIndex]
+    if (!seg || seg.type !== 'tool') return
+
+    // exec 状态 → segment 状态映射
+    let status: ToolSegmentStatus
+    switch (update.status) {
+      case 'running': status = 'running'; break
+      case 'succeeded': status = 'done'; break
+      case 'failed': status = 'done'; break
+      case 'timeout': status = 'timeout'; break
+      case 'killed': status = 'killed'; break
+      default: status = seg.status
+    }
+    let output = seg.output
+    if (update.output_tail) output = (output ? output + '\n' : '') + update.output_tail
+    segs[segIndex] = { ...seg, status, opId: update.op_id, output }
+    updateMessage(convId, msgId, { segments: segs })
+  }
+
+  /** 提交交互回答：POST 到后端成功后本地先行置为已处理（SSE interaction_result 会二次确认） */
+  async function answerInteraction(requestId: string, payload: AnswerInteractionPayload): Promise<boolean> {
+    const res = await answerInteractionApi(requestId, payload).catch(() => null)
+    if (!res?.ok) return false
+
+    // 本地置为终态
+    removePendingInteraction(requestId)
+    if (payload.answer != null) {
+      _applyTerminal(requestId, 'done', payload.answer)
+    } else {
+      const status: ToolSegmentStatus = payload.approved === false ? 'denied' : 'done'
+      _applyTerminal(requestId, status)
+    }
+    return true
+  }
+
   return {
     conversations,
     currentId,
@@ -361,6 +570,7 @@ export const useChatStore = defineStore('chat', () => {
     currentMessages,
     hasConversations,
     syncing,
+    pendingInteractions,
     syncFromBackend,
     createConversation,
     selectConversation,
@@ -371,5 +581,12 @@ export const useChatStore = defineStore('chat', () => {
     setConversationKb,
     ensureCurrentConversation,
     broadcastChange,
+    getPendingInteraction,
+    addPendingInteraction,
+    removePendingInteraction,
+    markToolSegmentWaiting,
+    resolveInteraction,
+    updateExecStatus,
+    answerInteraction,
   }
 })

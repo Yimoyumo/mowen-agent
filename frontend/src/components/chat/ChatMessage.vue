@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import InteractionCard from './InteractionCard.vue'
 import { renderMarkdown } from '@/utils/markdown'
-import type { MessageSegment } from '@/types/api'
+import { useChatStore } from '@/stores/chat'
+import type { MessageSegment, ToolSegmentStatus, InteractionRequest, AnswerInteractionPayload } from '@/types/api'
 
 interface Props {
   type: 'user' | 'assistant'
@@ -18,6 +20,8 @@ const emit = defineEmits<{
   'toggleContext': []
 }>()
 
+const store = useChatStore()
+
 const showReasoning = ref(true)
 const expandedTools = ref<Set<number>>(new Set())
 
@@ -27,6 +31,11 @@ const toolLabels: Record<string, string> = {
   sandbox_read_file: '读取文件',
   sandbox_list_files: '查看目录',
   sandbox_export_file: '导出文件',
+  run_command: '执行命令',
+  run_shell: '执行命令',
+  write_file: '写入文件',
+  read_file: '读取文件',
+  list_files: '查看目录',
   search_knowledge_base: '搜索知识库',
   search_web: '联网搜索',
 }
@@ -36,7 +45,7 @@ function toolLabel(name: string) {
 }
 
 function toolEmoji(name: string) {
-  if (name === 'sandbox_run') return '⚡'
+  if (name === 'sandbox_run' || name === 'run_command' || name === 'run_shell') return '⚡'
   if (name === 'search_web') return '🌐'
   if (name === 'search_knowledge_base') return '📚'
   return '🔧'
@@ -61,6 +70,32 @@ function toolGlobalIndex(segIndex: number) {
 const hasRunningTool = computed(() =>
   props.segments?.some(s => s.type === 'tool' && s.status === 'running')
 )
+
+/** 状态徽章文案与样式映射 */
+function statusInfo(status: ToolSegmentStatus): { text: string; cls: string } {
+  switch (status) {
+    case 'running': return { text: '执行中', cls: 'running' }
+    case 'waiting_approval': return { text: '等待审批', cls: 'waiting' }
+    case 'waiting_answer': return { text: '等待回答', cls: 'waiting' }
+    case 'denied': return { text: '已拒绝', cls: 'danger' }
+    case 'timeout': return { text: '已超时', cls: 'info' }
+    case 'killed': return { text: '已终止', cls: 'danger' }
+    case 'done': return { text: '✓ 完成', cls: 'done' }
+    default: return { text: '', cls: 'done' }
+  }
+}
+
+/** 取某 tool segment 对应的待处理交互（存在才渲染 InteractionCard） */
+function pendingRequest(seg: MessageSegment): InteractionRequest | null {
+  if (seg.type !== 'tool' || !seg.requestId) return null
+  return store.getPendingInteraction(seg.requestId) ?? null
+}
+
+/** 提交交互回答 */
+async function handleAnswer(requestId: string, payload: AnswerInteractionPayload) {
+  if (!requestId) return
+  await store.answerInteraction(requestId, payload)
+}
 </script>
 
 <template>
@@ -95,16 +130,16 @@ const hasRunningTool = computed(() =>
           <div
             v-else-if="seg.type === 'tool'"
             class="tool-call-item"
-            :class="{ running: seg.status === 'running' }"
+            :class="{ running: seg.status === 'running' || seg.status === 'waiting_approval' || seg.status === 'waiting_answer' }"
           >
             <button class="tool-call-header" @click="toggleTool(toolGlobalIndex(i))">
               <el-icon class="tool-icon" :class="{ expanded: expandedTools.has(toolGlobalIndex(i)) }"><ArrowRight /></el-icon>
               <span class="tool-icon-icon">{{ toolEmoji(seg.tool) }}</span>
               <span class="tool-name">{{ toolLabel(seg.tool) }}</span>
-              <span v-if="seg.status === 'running'" class="tool-status running">
-                <span class="dot-flashing"></span>执行中
+              <span class="tool-status" :class="statusInfo(seg.status).cls">
+                <span v-if="seg.status === 'running'" class="dot-flashing"></span>
+                {{ statusInfo(seg.status).text }}
               </span>
-              <span v-else class="tool-status done">✓ 完成</span>
             </button>
             <div v-if="expandedTools.has(toolGlobalIndex(i))" class="tool-call-detail">
               <div v-if="seg.input" class="tool-input">
@@ -115,6 +150,12 @@ const hasRunningTool = computed(() =>
                 <span class="detail-label">输出:</span>
                 <pre>{{ seg.output }}</pre>
               </div>
+              <!-- 待处理交互（审批 / ask_user）卡片 -->
+              <InteractionCard
+                v-if="seg.type === 'tool' && pendingRequest(seg)"
+                :request="pendingRequest(seg)"
+                @answer="(payload) => handleAnswer(seg.requestId ?? '', payload)"
+              />
             </div>
           </div>
         </template>
@@ -416,8 +457,20 @@ const hasRunningTool = computed(() =>
   color: #409eff;
 }
 
+.tool-status.waiting {
+  color: #e6a23c;
+}
+
 .tool-status.done {
   color: #67c23a;
+}
+
+.tool-status.danger {
+  color: #f56c6c;
+}
+
+.tool-status.info {
+  color: #909399;
 }
 
 .dot-flashing {

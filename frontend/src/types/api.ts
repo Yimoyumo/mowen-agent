@@ -13,9 +13,32 @@ export interface ChatMessage {
   createdAt: number
 }
 
+export type ToolSegmentStatus =
+  | 'running'
+  | 'done'
+  | 'waiting_approval'
+  | 'waiting_answer'
+  | 'denied'
+  | 'timeout'
+  | 'killed'
+
+export interface ToolSegment {
+  type: 'tool'
+  tool: string
+  input?: string
+  output?: string
+  status: ToolSegmentStatus
+  /** 关联的交互请求 ID（审批 / 提问） */
+  requestId?: string
+  /** 风险等级（如 "ask"） */
+  risk?: string
+  /** 宿主操作 ID，用于关联 exec_update 事件 */
+  opId?: string
+}
+
 export type MessageSegment =
   | { type: 'text'; content: string }
-  | { type: 'tool'; tool: string; input?: string; output?: string; status: 'running' | 'done' }
+  | ToolSegment
 
 export interface Conversation {
   id: string
@@ -119,6 +142,9 @@ export type StreamEvent =
   | { type: 'tool_end'; tool: string; output: string }
   | { type: 'done'; input_tokens?: number; output_tokens?: number; context_window?: number }
   | { type: 'error'; message: string }
+  | { type: 'interaction_request'; request_id: string; kind: InteractionKind; session_id: string; timeout?: number; payload: InteractionRequestPayload }
+  | { type: 'interaction_result'; request_id: string; status: InteractionResultStatus; approved?: boolean; answer?: string; scope?: InteractionAnswerScope }
+  | { type: 'exec_update'; op_id: string; status: ExecStatus; elapsed?: number; output_tail?: string }
 
 export interface StreamingChatCallbacks {
   onContexts?: (contexts: string[]) => void
@@ -129,6 +155,134 @@ export interface StreamingChatCallbacks {
   onToolEnd?: (tool: string, output: string) => void
   onDone?: (stats?: { input_tokens: number; output_tokens: number; context_window: number }) => void
   onError?: (message: string) => void
+  onInteractionRequest?: (request: InteractionRequest) => void
+  onInteractionResult?: (result: InteractionResultEvent) => void
+  onExecUpdate?: (update: ExecUpdateEvent) => void
+}
+
+// ==================== 交互（HITL）类型 ====================
+// 统一承载"权限审批"与"ask_user 主动提问"两类交互请求，
+// 后端通过 SSE 推送，前端借此渲染 InteractionCard。
+
+export type InteractionKind = 'approval' | 'ask_user'
+
+export type InteractionAnswerScope = 'once' | 'session' | 'always'
+
+export type InteractionResultStatus = 'answered' | 'timeout' | 'denied'
+
+export interface InteractionRequestPayload {
+  /** 审批：关联的工具名 */
+  tool?: string
+  /** 审批：待执行的命令 */
+  command?: string
+  /** 审批：请求原因 */
+  reason?: string
+  /** 审批：风险等级 */
+  risk?: string
+  /** ask_user：问题内容 */
+  question?: string
+  /** ask_user：预设选项 */
+  options?: string[]
+  /** ask_user：是否多选 */
+  multi_select?: boolean
+  /** ask_user：是否允许自由输入 */
+  allow_free_text?: boolean
+  /** 超时秒数（有的请求会带在 payload 里） */
+  timeout?: number
+}
+
+export interface InteractionRequest {
+  request_id: string
+  kind: InteractionKind
+  session_id: string
+  timeout: number
+  payload: InteractionRequestPayload
+  created_at?: number
+}
+
+export interface InteractionResultEvent {
+  request_id: string
+  status: InteractionResultStatus
+  approved?: boolean
+  answer?: string
+  scope?: InteractionAnswerScope
+}
+
+export interface AnswerInteractionPayload {
+  approved?: boolean
+  scope?: InteractionAnswerScope
+  answer?: string
+}
+
+export interface PendingInteractionsResult {
+  requests: InteractionRequest[]
+}
+
+// ==================== 宿主执行（HostOps）类型 ====================
+
+export type ExecStatus = 'running' | 'succeeded' | 'failed' | 'timeout' | 'killed'
+
+export interface ExecUpdateEvent {
+  op_id: string
+  status: ExecStatus
+  elapsed?: number
+  output_tail?: string
+}
+
+export interface HostRunningOp {
+  op_id: string
+  command: string
+  session_id: string
+  started_at: number | string
+}
+
+export interface HostOp {
+  op_id: string
+  tool: string
+  kind: string
+  target: string
+  risk: string
+  status: ExecStatus
+  exit_code?: number | null
+  created_at: number | string
+  finished_at?: number | string | null
+}
+
+export interface HostOpsResult {
+  mode: string
+  running: HostRunningOp[]
+  ops: HostOp[]
+}
+
+export interface HostWorkspaceEntry {
+  name: string
+  type: 'file' | 'dir'
+  size?: number
+}
+
+export interface HostWorkspaceResult {
+  entries: HostWorkspaceEntry[]
+}
+
+// ==================== 执行器设置 ====================
+
+export type ExecutorMode = 'host' | 'sandbox'
+
+export type ApprovalMode = 'ask_dangerous' | 'auto' | 'ask_all'
+
+export interface ExecutorSettingsConfig {
+  /** 执行模式：host 宿主机直操 / sandbox Docker 沙盒 */
+  mode: ExecutorMode
+  /** 审批模式 */
+  approval_mode: ApprovalMode
+  /** 审批超时秒数 */
+  approval_timeout: number
+  /** ask_user 提问超时秒数 */
+  ask_timeout: number
+  /** 命令超时秒数 */
+  command_timeout: number
+  /** 工作区保留天数 */
+  workspace_retention_days: number
 }
 
 export interface CreateKnowledgeBaseRequest {
@@ -166,6 +320,7 @@ export interface UserSettings {
     preferences: string
   }
   mcp_servers?: Record<string, unknown>
+  executor?: ExecutorSettingsConfig
   updated_at: string | null
 }
 

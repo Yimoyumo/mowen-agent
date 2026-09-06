@@ -130,6 +130,15 @@ _DEFAULT_SETTINGS = {
     },
     "persona": {"enabled": False, "content": ""},
     "user_profile": {"skills": "", "interests": "", "preferences": ""},
+    "executor": {
+        "mode": "host",
+        "approval_mode": "ask_dangerous",   # ask_dangerous / auto / ask_all
+        "approval_timeout": 120,
+        "ask_timeout": 300,
+        "command_timeout": 30,
+        "workspace_root": "data/host_workspaces",
+        "workspace_retention_days": 7,
+    },
     "updated_at": None,
 }
 
@@ -154,6 +163,7 @@ def build_config(settings: dict):
     ctx = settings.get("context", {})
     vs = settings.get("vector_store", {})
     agent = settings.get("agent", {})
+    ex = settings.get("executor", {})
 
     # 全局 generation 作为默认值，模型级覆盖优先
     active_model = settings.get("active_model", "")
@@ -186,6 +196,8 @@ def build_config(settings: dict):
         skills=settings.get("skills", []),
         logging=settings.get("logging", {}),
         deepseek_api_key=prov.get("deepseek", {}).get("api_key", ""),
+        executor_mode=ex.get("mode", "host"),
+        executor_config=dict(ex),
     )
 
 
