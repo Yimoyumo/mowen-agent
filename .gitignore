@@ -44,6 +44,10 @@ docs/简历-*.md
 docs/面试问题与回答话术.md
 docs/项目梳理-面试版.md
 
+# ==================== 设计文档（本地保留，不入库） ====================
+docs/host-executor-design.md
+docs/multimodal-image-handling.md
+
 # ==================== Agent 团队工具运行时 ====================
 .agent-teams/
 .agents/
