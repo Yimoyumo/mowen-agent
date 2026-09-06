@@ -56,7 +56,7 @@ class SandboxExecutor(WorkspaceExecutor):
     ) -> ExecResult:
         """在沙盒中执行命令。"""
         sb = self._sandbox(session_id)
-        exit_code, output = await asyncio.to_thread(sb.exec, command, timeout)
+        exit_code, output = await asyncio.to_thread(sb.run, command, timeout)
         timed_out = exit_code == -1 and "命令执行超时" in output
         return ExecResult(
             exit_code=exit_code,
@@ -73,15 +73,9 @@ class SandboxExecutor(WorkspaceExecutor):
         await asyncio.to_thread(sb.write_file, path, content)
 
     async def write_bytes(self, session_id: str, path: str, data: bytes) -> None:
-        """在沙盒中写入二进制文件（经 base64 传输并在容器内解码）。"""
-        import base64
+        """在沙盒中写入二进制文件（put_archive tar 写入，不经 shell）。"""
         sb = self._sandbox(session_id)
-        b64 = base64.b64encode(data).decode()
-        # base64 输出仅含 [A-Za-z0-9+/=]，无 shell 元字符，安全
-        cmd = f"echo {b64} | base64 -d > {path}"
-        exit_code, output = await asyncio.to_thread(sb.exec, cmd)
-        if exit_code != 0:
-            logger.warning("沙盒写二进制失败: path=%s output=%s", path, output[:200])
+        await asyncio.to_thread(sb.write_bytes, path, data)
 
     async def read_file(self, session_id: str, path: str) -> str:
         """读取沙盒中的文件内容。"""

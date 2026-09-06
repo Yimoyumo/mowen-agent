@@ -224,9 +224,10 @@ class UserSettings:
             self.save(data)
             return self._merge(data)
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
-        lp = _SETTINGS_FILE.with_suffix(".lock")
+        lock = Path("data/user_settings.lock")
+        lock.touch(exist_ok=True)
         try:
-            with open(lp, "w") as lf:
+            with open(lock, "r") as lf:
                 fcntl.flock(lf.fileno(), fcntl.LOCK_SH)
                 try:
                     with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -247,16 +248,17 @@ class UserSettings:
     def save(self, data):
         import fcntl
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
-        lp = _SETTINGS_FILE.with_suffix(".lock")
-        tp = _SETTINGS_FILE.with_suffix(".tmp")
+        lock = Path("data/user_settings.lock")
+        tmp = Path("data/user_settings.tmp")
+        lock.touch(exist_ok=True)
         data["updated_at"] = datetime.now().isoformat()
-        with open(lp, "w") as lf:
+        with open(lock, "r") as lf:
             fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
             try:
-                with open(tp, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush(); os.fsync(f.fileno())
-                os.replace(str(tp), str(_SETTINGS_FILE))
+                tmp.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                os.replace(str(tmp), str(_SETTINGS_FILE))
             finally:
                 fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
         logger.info("settings saved")

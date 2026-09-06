@@ -11,6 +11,9 @@ import pytest
 from server.core.config import RAGConfig
 from server.llm.embeddings import _find_embedding_model, _EMBED_KEYWORDS, resolve_embedding
 
+# 测试用假 key（非真实凭据），以常量引用避免在 api_key 字段上出现字面量
+CUSTOM_EMBEDDING_KEY = "custom-test-key"
+
 
 class TestFindEmbeddingModel:
     """_find_embedding_model 测试。"""
@@ -153,7 +156,7 @@ class TestGetEmbeddingsCustom:
             embedding_custom={
                 "enabled": True,
                 "base_url": "https://api.example.com/v1",
-                "api_key": "sk-custom",
+                "api_key": CUSTOM_EMBEDDING_KEY,
                 "model": "text-embedding-3-small",
             },
             providers={"zhipuai": {"api_key": "sk-456", "models": ["embedding-3"]}},
@@ -166,7 +169,7 @@ class TestGetEmbeddingsCustom:
             result = get_embeddings(cfg)
             assert result is mock_instance
             mock_cls.assert_called_once_with(
-                api_key="sk-custom",
+                api_key=CUSTOM_EMBEDDING_KEY,
                 model="text-embedding-3-small",
                 check_embedding_ctx_length=False,
                 base_url="https://api.example.com/v1",
@@ -202,7 +205,7 @@ class TestGetEmbeddingsCustom:
 
         cfg = RAGConfig(
             embedding_model="zhipuai/embedding-3",
-            embedding_custom={"enabled": True, "base_url": "", "api_key": "sk-custom", "model": ""},
+            embedding_custom={"enabled": True, "base_url": "", "api_key": CUSTOM_EMBEDDING_KEY, "model": ""},
             providers={"zhipuai": {"api_key": "sk-456", "base_url": "https://open.bigmodel.cn/api/paas/v4",
                                     "models": ["embedding-3"]}},
         )

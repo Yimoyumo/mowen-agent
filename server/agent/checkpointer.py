@@ -101,9 +101,6 @@ def _migrate_legacy_checkpoints(db_path: Path) -> None:
 
         conn.execute("ATTACH DATABASE ? AS legacy", (str(_LEGACY_DB_PATH),))
 
-        def _cols(schema: str, table: str) -> list[str]:
-            return [r[1] for r in conn.execute(f"PRAGMA {schema}.table_info({table})")]
-
         target_tables = {
             r[0] for r in conn.execute(
                 "SELECT name FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -112,11 +109,25 @@ def _migrate_legacy_checkpoints(db_path: Path) -> None:
             r[0] for r in conn.execute(
                 "SELECT name FROM legacy.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
         }
-        for table in sorted(target_tables & legacy_tables):
-            if _cols("main", table) != _cols("legacy", table):
-                logger.warning("检查点迁移跳过表 %s（列结构不一致）", table)
+
+        # 迁移目标仅限 langgraph 检查点表：逐表写死静态 SQL，无任何拼接
+        for table in ("checkpoints", "writes"):
+            if table not in target_tables or table not in legacy_tables:
                 continue
-            conn.execute(f"INSERT OR IGNORE INTO main.{table} SELECT * FROM legacy.{table}")
+            if table == "checkpoints":
+                main_cols = [r[1] for r in conn.execute("PRAGMA table_info(checkpoints)")]
+                legacy_cols = [r[1] for r in conn.execute("PRAGMA legacy.table_info(checkpoints)")]
+                if main_cols != legacy_cols:
+                    logger.warning("检查点迁移跳过表 %s（列结构不一致）", table)
+                    continue
+                conn.execute("INSERT OR IGNORE INTO main.checkpoints SELECT * FROM legacy.checkpoints")
+            else:
+                main_cols = [r[1] for r in conn.execute("PRAGMA table_info(writes)")]
+                legacy_cols = [r[1] for r in conn.execute("PRAGMA legacy.table_info(writes)")]
+                if main_cols != legacy_cols:
+                    logger.warning("检查点迁移跳过表 %s（列结构不一致）", table)
+                    continue
+                conn.execute("INSERT OR IGNORE INTO main.writes SELECT * FROM legacy.writes")
             copied.append(table)
         conn.commit()
         conn.execute("DETACH DATABASE legacy")

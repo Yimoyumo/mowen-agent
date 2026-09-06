@@ -106,10 +106,11 @@ class MemoryStore:
         if not _MEMORIES_FILE.exists():
             return []
 
-        lock_path = _MEMORIES_FILE.with_suffix(".lock")
-        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        lock = Path("data/memories.lock")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.touch(exist_ok=True)
 
-        with open(lock_path, "w") as lock_file:
+        with open(lock, "r") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
             try:
                 with open(_MEMORIES_FILE, "r", encoding="utf-8") as f:
@@ -123,23 +124,23 @@ class MemoryStore:
         """保存所有记忆（原子写入 + 文件锁）。"""
         import fcntl
 
-        _DATA_DIR.mkdir(parents=True, exist_ok=True)
-        lock_path = _MEMORIES_FILE.with_suffix(".lock")
-        tmp_path = _MEMORIES_FILE.with_suffix(".tmp")
+        lock = Path("data/memories.lock")
+        tmp = Path("data/memories.tmp")
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.touch(exist_ok=True)
 
         data = {
             "memories": memories,
             "updated_at": datetime.now().isoformat(),
         }
 
-        with open(lock_path, "w") as lock_file:
+        with open(lock, "r") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             try:
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(str(tmp_path), str(_MEMORIES_FILE))
+                tmp.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                os.replace(str(tmp), str(_MEMORIES_FILE))
             finally:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 

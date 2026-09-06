@@ -5,6 +5,7 @@
 """
 
 import mimetypes
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -83,9 +84,14 @@ async def upload_file(file: UploadFile = File(...)) -> dict:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / safe_filename
 
-    # 流式写入并检查大小
+    # 纵深防御：确认最终写入路径位于 uploads 目录内（防文件名清洗遗漏）
+    if not dest_path.resolve().is_relative_to(_UPLOADS_DIR.resolve()):
+        raise ValidationError("非法文件路径")
+
+    # 低层句柄流式写入：O_NOFOLLOW 防符号链接替换，避免大文件整体载入内存
+    fd = os.open(dest_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
     total_size = 0
-    with open(dest_path, "wb") as f:
+    with os.fdopen(fd, "wb") as f:
         while chunk := await file.read(64 * 1024):  # 64KB chunks
             total_size += len(chunk)
             if total_size > _MAX_UPLOAD_SIZE:

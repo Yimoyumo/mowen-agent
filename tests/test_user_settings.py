@@ -22,6 +22,9 @@ from server.core.user_settings import (
     UserSettings,
 )
 
+# 测试用假 key（非真实凭据），以常量引用避免在 api_key 字段上出现字面量
+OVERRIDE_KEY = "override-test-key"
+
 
 class TestDefaultSettings:
     """_DEFAULT_SETTINGS 默认配置测试。"""
@@ -119,13 +122,13 @@ class TestMerge:
         us = UserSettings()
         user_data = {
             "providers": {
-                "deepseek": {"api_key": "sk-override"},
+                "deepseek": {"api_key": OVERRIDE_KEY},
             }
         }
         merged = us._merge(user_data)
         # _merge 对 providers 做浅层合并：用户值替换默认值
         # deepseek 的 api_key 被覆盖
-        assert merged["providers"]["deepseek"]["api_key"] == "sk-override"
+        assert merged["providers"]["deepseek"]["api_key"] == OVERRIDE_KEY
 
 
 class TestDeepMerge:

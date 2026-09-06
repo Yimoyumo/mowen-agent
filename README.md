@@ -52,7 +52,7 @@ graph TD
 | 执行器 | HostExecutor（宿主机，默认）+ SandboxExecutor（Docker 回退）/ base 抽象 |
 | MCP | langchain-mcp-adapters + @playwright/mcp |
 | 后端 | FastAPI + SSE 流式 |
-| 数据库 | SQLite（WAL + 线程本地连接；host_ops 审计表） |
+| 数据库 | SQLite 单库（WAL + 线程本地连接；业务表 + LangGraph 检查点表 + host_ops 审计） |
 | 部署 | Docker Compose（Nginx + Uvicorn 单容器） |
 
 ## 🚀 快速开始
@@ -98,6 +98,7 @@ docker compose up -d
 │   ├── prompts/                     # 提示词统一管理
 │   └── agent/                       # Agent 子包（graph/tools/mcp/memory/skills）
 │       ├── executor/                # 执行器抽象层（base/factory/host/sandbox）
+│       ├── image_utils.py           # 图片压缩（上传看图 / 工作区读图共用）
 │       ├── permissions.py           # 权限引擎（classify_command/classify_file_op）
 │       ├── interaction.py           # 统一 HITL（审批/提问 request+answer）
 │       └── ops_audit.py             # 宿主操作审计（host_ops 表）
@@ -105,8 +106,8 @@ docker compose up -d
 │   └── routes/                      # 含 interactions（审批/提问应答）、host_ops（执行状态）
 ├── skills/                      # 技能文件（Markdown，自动扫描）
 ├── frontend/                    # Vue 3 前端
-├── data/                        # 用户配置 + 记忆 + 上传文件
-├── vectorstore/                 # Chroma 持久化数据
+├── data/                        # 用户配置 + 记忆 + 执行器工作区
+├── vectorstore/                 # Chroma 向量数据 + 统一 SQLite 库（mowen.db）
 ├── tests/                       # pytest 测试
 ├── Dockerfile.app               # 应用镜像（多阶段构建）
 ├── Dockerfile.sandbox           # 沙盒镜像
@@ -168,7 +169,7 @@ Agent: → search_web("北京天气") → 返回实时天气
 
 用户: "帮我画个柱状图"
 Agent: → write_file("plot.py") → run_command("python plot.py")
-      → export_file("chart.png") → 图片直接在聊天中渲染
+      → read_file("chart.png") 自查图像 → export_file("chart.png") → 图片直接在聊天中渲染
 
 用户: "你好，介绍一下自己"
 Agent: → 不调用工具，直接回答
@@ -198,7 +199,7 @@ Agent 在宿主机上执行命令/文件操作是**去沙盒化**的有意设计
 |------|------|------|
 | 🖥️ 命令 | `run_command` | 在工作区执行 shell 命令（危险操作需审批） |
 | | `write_file` / `edit_file` | 文件创建 / 精确替换 |
-| | `read_file` / `list_files` | 读取文件 / 列出目录 |
+| | `read_file` / `list_files` | 读取文件 / 列出目录；图片在视觉模型下以图像形式直接查看，二进制文件明确提示 |
 | | `export_file` | 导出文件为下载链接（图片直接渲染） |
 | 💬 交互 | `ask_user` | 主动向用户提问（统一 HITL 机制） |
 | 🔧 MCP | `export_mcp_file` | 导入 MCP 浏览器文件到工作区 |
@@ -268,7 +269,7 @@ graph TD
 | **清洗** | 统一换行 / 去零宽字符 / NFKC 标准化 / 修复 PDF 断词 / 去页码 / 过滤目录页 |
 | **切分** | 按知识库类型定制（见下表） |
 | **入库** | Chroma 分批嵌入 + 维度检测记录 |
-| **检索** | 查询扩写 + 多查询检索 + 去重，小说类型特殊重排 |
+| **检索** | 查询扩写 + 多查询检索 + RRF 倒数排名融合，小说类型特殊重排 |
 
 | 类型 | 切分策略 |
 |------|----------|

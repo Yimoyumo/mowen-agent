@@ -89,11 +89,11 @@ class Sandbox:
     def container_id(self) -> str:
         return self._container.id[:12]
 
-    def exec(self, command: str, timeout: int = _DEFAULT_TIMEOUT) -> tuple[int, str]:
+    def run(self, command: "str | list[str]", timeout: int = _DEFAULT_TIMEOUT) -> tuple[int, str]:
         """在沙盒中执行命令，返回 (exit_code, stdout+stderr)。
 
         Args:
-            command: shell 命令
+            command: shell 命令字符串（sh -c 执行）或 argv 列表（直接执行）
             timeout: 超时秒数，超过则自动 kill
         """
         try:
@@ -101,14 +101,17 @@ class Sandbox:
             try:
                 self._container.reload()
             except Exception:
-                logger.warning("沙盒容器已关闭: session=%s container=%s", 
+                logger.warning("沙盒容器已关闭: session=%s container=%s",
                                 getattr(self, '_session_id', '?'), self.container_id)
                 return -1, "（沙盒容器已关闭，请重新开始对话）"
 
-            # 用 timeout 命令包裹，防止死循环/长等待卡住 Agent
-            wrapped = f"timeout {timeout} sh -c {_quote(command)}"
+            # timeout 包裹防死循环；argv 直传，不经二次 shell 解析
+            if isinstance(command, str):
+                argv = ["timeout", str(timeout), "sh", "-c", command]
+            else:
+                argv = ["timeout", str(timeout), *command]
             result = self._container.exec_run(
-                ["sh", "-c", wrapped],
+                argv,
                 user="root",
                 demux=False,
             )
@@ -127,21 +130,35 @@ class Sandbox:
             return -1, f"（沙盒命令执行失败: {exc}）"
 
     def write_file(self, path: str, content: str) -> None:
-        """在沙盒中创建/覆盖文件。"""
-        safe_content = content.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`")
-        cmd = f"cat > {_resolve_path(path)} << 'SANDBOX_EOF'\n{safe_content}\nSANDBOX_EOF"
-        self.exec(cmd)
+        """在沙盒中创建/覆盖文本文件（put_archive tar 写入，字节精确且不经 shell）。"""
+        self.write_bytes(path, content.encode("utf-8"))
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        """在沙盒中写入二进制文件（put_archive tar 写入，不经 shell）。"""
+        resolved = _resolve_path(path)
+        tar_io = io.BytesIO()
+        with tarfile.open(fileobj=tar_io, mode="w") as tar:
+            info = tarfile.TarInfo(name=Path(resolved).name)
+            info.size = len(data)
+            info.mtime = int(time.time())
+            tar.addfile(info, io.BytesIO(data))
+        tar_io.seek(0)
+        # put_archive 的 path 是目标目录，文件名在 tar 内
+        self._container.put_archive(str(Path(resolved).parent), tar_io)
 
     def read_file(self, path: str) -> str:
         """读取沙盒中的文件内容。"""
-        exit_code, output = self.exec(f"cat {_resolve_path(path)}")
-        if exit_code != 0:
+        try:
+            data = self.read_bytes(path)
+        except FileNotFoundError:
             return f"（文件不存在或无法读取: {path}）"
+        except ValueError as exc:
+            return f"（读取失败: {exc}）"
         # 二进制检测：内容含 NUL 字节视为二进制，给出明确提示而非乱码
-        if "\x00" in output[:8192]:
+        if b"\x00" in data[:8192]:
             return (f"（{path} 是二进制文件，无法作为文本读取。"
                     f"可使用 run_command 配合 file / strings 等命令分析）")
-        return output
+        return data.decode("utf-8", errors="replace")
 
     def read_bytes(self, path: str, timeout: int = _DEFAULT_TIMEOUT) -> bytes:
         """读取沙盒中的文件原始字节（供图片查看等二进制场景）。
@@ -157,8 +174,12 @@ class Sandbox:
                             getattr(self, '_session_id', '?'), self.container_id)
             raise FileNotFoundError(path)
 
-        wrapped = f"timeout {timeout} sh -c {_quote(f'cat {_resolve_path(path)}')}"
-        result = self._container.exec_run(["sh", "-c", wrapped], user="root", demux=False)
+        # 直接以 argv 执行（不经 shell 拼接，避免命令注入面）
+        result = self._container.exec_run(
+            ["timeout", str(timeout), "cat", _resolve_path(path)],
+            user="root",
+            demux=False,
+        )
         if (result.exit_code or 0) != 0:
             raise FileNotFoundError(path)
         data = result.output or b""
@@ -168,7 +189,7 @@ class Sandbox:
 
     def list_dir(self, path: str = "/workspace") -> str:
         """列出目录内容（ls -lah）。"""
-        exit_code, output = self.exec(f"ls -lah {_resolve_path(path)}")
+        exit_code, output = self.run(["ls", "-lah", _resolve_path(path)])
         if exit_code != 0:
             return f"（目录不存在或无法列出: {path}）"
         return output
@@ -445,12 +466,6 @@ def create() -> Sandbox:
 def get() -> Sandbox | None:
     """[已废弃] 获取当前上下文的沙盒。请用 get(session_id)。"""
     return _current_sandbox.get(None)
-
-
-def _quote(command: str) -> str:
-    """安全的 shell 引用（单引号包裹，避免注入）。"""
-    escaped = command.replace("'", "'\\''")
-    return f"'{escaped}'"
 
 
 def _resolve_path(path: str) -> str:

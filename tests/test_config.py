@@ -12,6 +12,9 @@
 from server.core.config import RAGConfig, _split_model_ref
 from server.core.user_settings import _DEFAULT_SETTINGS, build_config
 
+# 测试用假 key（非真实凭据），以常量引用避免在 key 字段上出现字面量
+TAVILY_TEST_KEY = "tavily-test-key"
+
 
 class TestSplitModelRef:
     """_split_model_ref 测试。"""
@@ -138,12 +141,12 @@ class TestBuildConfig:
         settings = {
             "active_model": "zhipuai/glm-4-flash",
             "embedding_model": "zhipuai/embedding-3",
-            "providers": {"zhipuai": {"api_key": "sk-test"}},
+            "providers": {"zhipuai": {"api_key": ""}},
             "generation": {"temperature": 0.8, "timeout": 60},
             "chunking": {"size": 800, "overlap": 100},
             "retrieval": {"top_k": 10, "query_expansion": True},
             "context": {"max_tokens": 4096},
-            "agent": {"tavily_api_key": "tvly-xxx"},
+            "agent": {"tavily_api_key": TAVILY_TEST_KEY},
             "vector_store": {"dir": "/tmp/vs"},
         }
         cfg = build_config(settings)
@@ -151,7 +154,7 @@ class TestBuildConfig:
         assert cfg.temperature == 0.8
         assert cfg.chunk_size == 800
         assert cfg.top_k == 10
-        assert cfg.tavily_api_key == "tvly-xxx"
+        assert cfg.tavily_api_key == TAVILY_TEST_KEY
         assert cfg.vector_store_dir == "/tmp/vs"
 
     def test_build_empty_dict(self):
@@ -166,7 +169,7 @@ class TestBuildConfig:
             "embedding_custom": {
                 "enabled": True,
                 "base_url": "https://api.example.com/v1",
-                "api_key": "sk-custom",
+                "api_key": "",
                 "model": "text-embedding-3-small",
             }
         }
