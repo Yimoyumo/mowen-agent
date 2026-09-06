@@ -1,9 +1,14 @@
 # ==================== Python ====================
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.egg-info/
 .venv/
+
+# 覆盖率产物（pytest-cov）
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # ==================== 环境变量与密钥 ====================
 .env
@@ -11,19 +16,33 @@ __pycache__/
 data/user_settings.json
 
 # ==================== 数据与运行时产物 ====================
-# 向量库持久化数据（运行时生成）
+# 向量库 / 统一 SQLite / 记忆 / 工作区（运行时生成）
 vectorstore/
-
-# 原始文档数据（按需放置，不纳入版本控制）
 data/
 
-# ==================== Jupyter ====================
+# 运行日志与上传/下载暂存
+logs/
+*.log
+downloads/
+uploads/
+
+# ==================== 安全扫描器（Mimosa）项目级状态 ====================
+.mimosa/
+
+# ==================== Agent 工具运行时 ====================
+.agent-teams/
+.agents/
+.playwright-mcp/
+
+# ==================== 测试与 Jupyter 缓存 ====================
+.pytest_cache/
 .ipynb_checkpoints/
 
 # ==================== IDE / 编辑器 ====================
 .vscode/
 .idea/
 *.sw?
+*~
 *.suo
 *.ntvs*
 *.njsproj
@@ -32,12 +51,6 @@ data/
 # ==================== 系统 ====================
 .DS_Store
 Thumbs.db
-
-# ==================== 日志 ====================
-*.log
-logs/
-downloads/
-uploads/
 
 # ==================== 个人材料（简历 / 面试准备，不纳入版本控制） ====================
 docs/简历-*.md
@@ -48,25 +61,11 @@ docs/项目梳理-面试版.md
 docs/host-executor-design.md
 docs/multimodal-image-handling.md
 
-# ==================== Agent 团队工具运行时 ====================
-.agent-teams/
-.agents/
-
-# ==================== 测试缓存 ====================
-.pytest_cache/
-
-# ==================== MCP 浏览器产物 ====================
-.playwright-mcp/
-
 # ==================== 临时调试文件 ====================
 deepseek-api-docs.md
 page-content.yml
 page_snapshot.md
-
-# ==================== 构建产物 / 临时压缩包 ====================
-*.tar.gz
-mowen-app.tar.gz
-mowen-sandbox.tar.gz
-
-# ==================== 临时截图 ====================
 siliconflow_embeddings.png
+
+# ==================== 构建产物 / 压缩包 ====================
+*.tar.gz
