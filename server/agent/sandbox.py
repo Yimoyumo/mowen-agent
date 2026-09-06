@@ -39,7 +39,12 @@ _SANDBOX_WORKSPACE_DIR = Path("data/sandbox_workspaces")  # 沙盒工作区持�
 # 沙盒池配置
 _MAX_SANDBOXES = 3              # 2核4G 最多支撑 2-3 个并发沙盒
 _SANDBOX_IDLE_TIMEOUT = 900      # 15 分钟空闲自动销毁（更快释放内存）
+_SANDBOX_TTL = 86400             # 生命周期硬上限（24h）：持续活跃也不无限存活，到期强制重建
 _CLEANUP_INTERVAL = 300         # 每 5 分钟检查一次超时
+
+# 容器标签（供孤儿容器 GC 与运维查询定位）
+_LABEL_ROLE = "mowen.role"
+_LABEL_SESSION = "mowen.session"
 
 
 class Sandbox:
@@ -78,12 +83,15 @@ class Sandbox:
             tty=True,
             volumes={
                 # 挂载宿主机目录到 /workspace，容器重建后文件不丢失
+                # （宿主机目录已 mkdir，bind mount 自动生成容器内挂载点，
+                #   命令均以 root 执行，无需额外的 mkdir/chmod 初始化往返）
                 str(workspace_dir): {"bind": "/workspace", "mode": "rw"},
             },
+            labels={
+                _LABEL_ROLE: "sandbox",
+                _LABEL_SESSION: session_id or "default",
+            },
         )
-        # 初始化工作区
-        self._container.exec_run("mkdir -p /workspace", user="root")
-        self._container.exec_run("chmod 777 /workspace", user="root")
 
     @property
     def container_id(self) -> str:
@@ -323,20 +331,34 @@ def get_or_create(session_id: str) -> Sandbox:
     """获取或创建沙盒（按 session_id）。
 
     如果池中已有该会话的沙盒且容器存活，直接复用；
+    存活但超过 TTL 硬上限的强制销毁重建（工作区数据在宿主机卷上，不丢失）；
     否则创建新沙盒并存入池中，同时自动重新导入已上传的文件。
     """
     with _pool_lock:
         entry = _sandbox_pool.get(session_id)
+        now = time.time()
+        ttl_expired = False
         if entry:
             try:
                 entry["sandbox"]._container.reload()
-                entry["last_active"] = time.time()
-                logger.debug("沙盒复用: session=%s", session_id)
-                return entry["sandbox"]
+                entry["last_active"] = now
+                if _ttl_expired(entry, now):
+                    ttl_expired = True
+                else:
+                    logger.debug("沙盒复用: session=%s", session_id)
+                    return entry["sandbox"]
             except Exception as exc:
                 logger.info("沙盒容器已失效，重建: session=%s err=%s", session_id, exc)
                 del _sandbox_pool[session_id]
+                entry = None
 
+    # TTL 到期销毁必须在锁外执行（destroy 内部会重新获取 _pool_lock）
+    if ttl_expired and entry:
+        logger.info("沙盒 TTL 到期，重建: session=%s (已存活 %d 秒)",
+                    session_id, int(now - entry["created_at"]))
+        destroy(session_id)
+
+    with _pool_lock:
         if len(_sandbox_pool) >= _MAX_SANDBOXES:
             oldest_id = min(_sandbox_pool, key=lambda k: _sandbox_pool[k]["last_active"])
             old = _sandbox_pool.pop(oldest_id)
@@ -346,28 +368,34 @@ def get_or_create(session_id: str) -> Sandbox:
                 logger.warning("淘汰沙盒销毁失败: session=%s err=%s", oldest_id, exc)
             logger.warning("沙盒池已满，淘汰: session=%s", oldest_id)
 
-        sb = Sandbox(session_id=session_id)
+    t0 = time.perf_counter()
+    sb = Sandbox(session_id=session_id)
+    cold_seconds = time.perf_counter() - t0
+
+    with _pool_lock:
         _sandbox_pool[session_id] = {
             "sandbox": sb,
+            "created_at": time.time(),
             "last_active": time.time(),
         }
-        logger.info("沙盒已创建: session=%s container=%s", session_id, sb.container_id)
+    logger.info("沙盒已创建: session=%s container=%s 冷启动耗时=%.2fs",
+                session_id, sb.container_id, cold_seconds)
 
-        # 自动重新导入之前上传的文件
+    # 自动重新导入之前上传的文件
+    with _session_files_lock:
+        files = _session_files.get(session_id, [])
+    if files:
+        remaining = _reimport_files(sb, files)
+        # 部分文件已过期，更新 tracking
         with _session_files_lock:
-            files = _session_files.get(session_id, [])
-        if files:
-            remaining = _reimport_files(sb, files)
-            # 部分文件已过期，更新 tracking
-            with _session_files_lock:
-                if remaining:
-                    _session_files[session_id] = remaining
-                else:
-                    _session_files.pop(session_id, None)
-            logger.info("沙盒文件已恢复: session=%s 成功=%d/%d",
-                       session_id, len(remaining), len(files))
+            if remaining:
+                _session_files[session_id] = remaining
+            else:
+                _session_files.pop(session_id, None)
+        logger.info("沙盒文件已恢复: session=%s 成功=%d/%d",
+                    session_id, len(remaining), len(files))
 
-        return sb
+    return sb
 
 
 def get(session_id: str) -> Sandbox | None:
@@ -412,25 +440,77 @@ def destroy_all() -> None:
 def pool_status() -> dict:
     """返回沙盒池状态（用于调试/监控）。"""
     with _pool_lock:
+        now = time.time()
         return {
             "total": len(_sandbox_pool),
             "max": _MAX_SANDBOXES,
+            "ttl": _SANDBOX_TTL,
             "sessions": [
                 {
                     "session_id": sid,
                     "container_id": e["sandbox"].container_id,
-                    "idle_seconds": int(time.time() - e["last_active"]),
+                    "idle_seconds": int(now - e["last_active"]),
+                    "age_seconds": int(now - e["created_at"]),
+                    "ttl_remaining": max(0, _SANDBOX_TTL - int(now - e["created_at"])),
                 }
                 for sid, e in _sandbox_pool.items()
             ],
         }
 
 
+def _ttl_expired(entry: dict, now: float) -> bool:
+    """判断池条目是否超过生命周期硬上限。"""
+    return now - entry.get("created_at", 0) > _SANDBOX_TTL
+
+
+def _gc_orphan_containers() -> int:
+    """回收带沙盒标签但会话已不在池中的孤儿容器。
+
+    应用崩溃 / 断电等异常退出时 remove=True 不会生效，
+    残留容器会持续占用内存，由定期扫描兜底回收。
+    """
+    try:
+        client = docker.from_env()
+        containers = client.containers.list(filters={"label": f"{_LABEL_ROLE}=sandbox"})
+    except Exception as exc:
+        logger.debug("孤儿容器扫描跳过（Docker 不可用）: %s", exc)
+        return 0
+
+    with _pool_lock:
+        active = set(_sandbox_pool.keys())
+
+    removed = 0
+    for c in containers:
+        sid = (c.labels or {}).get(_LABEL_SESSION, "")
+        if sid in active:
+            continue
+        try:
+            c.remove(force=True)
+            removed += 1
+            logger.info("孤儿沙盒容器已回收: session=%s container=%s", sid, c.id[:12])
+        except Exception as exc:
+            logger.warning("孤儿容器回收失败: container=%s err=%s", c.id[:12], exc)
+    return removed
+
+
+def configure(ttl: int | None = None) -> None:
+    """运行时配置沙盒参数（由执行器适配器初始化时调用）。
+
+    Args:
+        ttl: 沙盒生命周期硬上限（秒）；非正数/缺省时保持当前值
+    """
+    global _SANDBOX_TTL
+    if ttl and ttl > 0:
+        _SANDBOX_TTL = ttl
+
+
 def _cleanup_loop():
-    """后台线程：定期清理超时的空闲沙盒。"""
+    """后台线程：定期清理空闲超时与 TTL 到期的沙盒，并回收孤儿容器。"""
     while True:
         time.sleep(_CLEANUP_INTERVAL)
         now = time.time()
+
+        # 1. 空闲超时
         expired_ids: list[str] = []
         with _pool_lock:
             for sid, entry in _sandbox_pool.items():
@@ -439,6 +519,19 @@ def _cleanup_loop():
         for sid in expired_ids:
             destroy(sid)
             logger.info("沙盒超时清理: session=%s (空闲超过 %d 秒)", sid, _SANDBOX_IDLE_TIMEOUT)
+
+        # 2. TTL 到期（持续活跃的沙盒也有生命周期上限）
+        ttl_ids: list[str] = []
+        with _pool_lock:
+            for sid, entry in _sandbox_pool.items():
+                if _ttl_expired(entry, now):
+                    ttl_ids.append(sid)
+        for sid in ttl_ids:
+            destroy(sid)
+            logger.info("沙盒 TTL 到期清理: session=%s (存活超过 %d 秒)", sid, _SANDBOX_TTL)
+
+        # 3. 孤儿容器回收
+        _gc_orphan_containers()
 
 
 # 启动清理线程（守护线程，随主进程退出）

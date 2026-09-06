@@ -33,6 +33,8 @@ class SandboxExecutor(WorkspaceExecutor):
 
         self._sb = _sb
         self._cfg = config or {}
+        # 沙盒生命周期硬上限（秒），来自 executor.sandbox_ttl 配置
+        _sb.configure(ttl=int(self._cfg.get("sandbox_ttl") or 0))
 
     # ==================== 工作区 ====================
 

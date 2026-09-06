@@ -145,6 +145,7 @@ docker compose up -d
 | `command_timeout` | `30` | 命令执行超时秒数（pip/apt/git clone 等自动提升到 180s） |
 | `workspace_root` | `data/host_workspaces` | 工作区根目录 |
 | `workspace_retention_days` | `7` | 会话工作区保留天数，超过则清理 |
+| `sandbox_ttl` | `86400` | 沙盒生命周期硬上限（秒），到期强制重建（工作区数据保留） |
 | `deny_commands` / `auto_allow_commands` / `ask_commands` | `[]` | 追加的自定义权限规则 |
 | `persistent_allow` | `[]` | 用户审批时勾选 "always" 后累积的永久放行命令模式 |
 
@@ -243,7 +244,7 @@ def _build_openai(config):
 | **错误处理** | 统一异常体系（7 种业务异常 → HTTP 状态码）+ 三层隔离（用户消息 / 内部详情 / 完整堆栈） |
 | **文件安全** | 200MB 上传限制 + 类型白名单（40+ 扩展名）+ 路径穿越防护 + 24h 自动清理 |
 | **权限引擎/HITL** | `permissions` 三档分类（auto/ask/deny）+ 统一交互请求 + 作用域缓存 + `host_ops` 审计 |
-| **进程安全** | 执行器仅透传白名单 env、超时杀进程组、超限截断输出、工作区信任根校验 |
+| **进程安全** | 执行器仅透传白名单 env、超时杀进程组、超限截断输出、工作区信任根校验；沙盒容器打标签，空闲/TTL/孤儿容器三类自动回收 |
 | **MCP 容错** | 逐服务器独立连接 + 30s 超时 + 全部失败仍可用内置工具 |
 | **定时任务** | APScheduler + SQLite 持久化 + cron/间隔/单次触发 + 重启自动恢复 |
 | **配置加载** | `RAGConfig.from_settings()` 自动创建默认配置 + 前端 API 管理 |

@@ -138,6 +138,7 @@ _DEFAULT_SETTINGS = {
         "command_timeout": 30,
         "workspace_root": "data/host_workspaces",
         "workspace_retention_days": 7,
+        "sandbox_ttl": 86400,               # 沙盒生命周期硬上限（秒），到期强制重建
     },
     "updated_at": None,
 }
