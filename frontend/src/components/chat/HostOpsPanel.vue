@@ -140,7 +140,7 @@ onBeforeUnmount(stopPoll)
           <span class="section-count" v-if="(ops?.running?.length ?? 0) > 0">{{ ops?.running?.length }}</span>
         </div>
         <div v-if="(ops?.running?.length ?? 0) > 0" class="running-list">
-          <div v-for="op in ops.running" :key="op.op_id" class="running-item">
+          <div v-for="op in ops?.running ?? []" :key="op.op_id" class="running-item">
             <div class="running-command">{{ op.command }}</div>
             <div class="running-meta">
               <span>{{ op.session_id }}</span>
