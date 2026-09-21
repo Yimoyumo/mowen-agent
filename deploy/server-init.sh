@@ -9,7 +9,7 @@ set -e
 
 echo "=== 墨问 AI 助手 - 服务器初始化 ==="
 
-DEPLOY_DIR="/root/mowen-deploy"
+DEPLOY_DIR="/opt/mowen-deploy"
 
 # ---- Step 1: 检查 Docker ----
 echo "[1/5] 检查 Docker..."

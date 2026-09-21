@@ -325,7 +325,7 @@ curl http://127.0.0.1:8001/api/health
 |------|--------|------|
 | `MOWEN_APP_IMAGE` | ACR 的 `mowen-agent:latest` | 应用镜像 |
 | `MOWEN_SANDBOX_IMAGE` | ACR 的 `mowen-sandbox:latest` | 沙盒镜像（需先在宿主机 pull） |
-| `MOWEN_SANDBOX_WORKSPACE` | `/srv/mowen-sandbox` | 沙盒工作区根目录；该路径会交给宿主机 Docker 做 bind 挂载，**必须容器内外同路径**（compose 已按同路径挂载） |
+| `MOWEN_SANDBOX_WORKSPACE` | `/opt/mowen-sandbox` | 沙盒工作区根目录；该路径会交给宿主机 Docker 做 bind 挂载，**必须容器内外同路径**（compose 已按同路径挂载） |
 
 ### 日常运维
 

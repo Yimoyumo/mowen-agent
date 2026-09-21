@@ -42,7 +42,7 @@ _UPLOADS_DIR = Path("uploads")      # 用户上传暂存目录
 # 沙盒工作区持久化目录。这个路径会作为 bind 源交给**宿主机的 Docker**（经 docker.sock），
 # 因此必须让容器内外的绝对路径一致，否则宿主机上找不到该路径、Docker 会自动新建一个空目录，
 # 结果沙盒实际挂在别处、应用侧看到的仍是空目录。容器里由 compose 以同路径挂载并设置该变量：
-#   MOWEN_SANDBOX_WORKSPACE=/srv/mowen-sandbox
+#   MOWEN_SANDBOX_WORKSPACE=/opt/mowen-sandbox
 _SANDBOX_WORKSPACE_DIR = Path(os.environ.get("MOWEN_SANDBOX_WORKSPACE") or "data/sandbox_workspaces")
 
 # 容器内跑但没给环境变量时提醒一次：此时相对路径解析成 /app/data/...，宿主机上并不存在

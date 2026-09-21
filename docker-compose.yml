@@ -12,7 +12,7 @@ services:
       # 沙盒工作区：该路径会作为 bind 源交给宿主机 Docker，所以**容器内外必须是同一个绝对路径**，
       # 否则宿主机上找不到、Docker 会新建空目录，沙盒数据就落到部署目录之外了。
       # 宿主机上不存在时 Docker 会自动创建；也可以自己 mkdir 好再挂。
-      - ${MOWEN_SANDBOX_WORKSPACE:-/srv/mowen-sandbox}:${MOWEN_SANDBOX_WORKSPACE:-/srv/mowen-sandbox}
+      - ${MOWEN_SANDBOX_WORKSPACE:-/opt/mowen-sandbox}:${MOWEN_SANDBOX_WORKSPACE:-/opt/mowen-sandbox}
       # 数据持久化
       - ./data:/app/data
       - ./downloads:/app/downloads
@@ -21,7 +21,9 @@ services:
       - ./logs:/app/logs
       # 技能目录
       - ./skills:/app/skills
-      - ./.agents/skills:/app/.agents/skills
+      # 用户技能目录：应用按 Path.home()/.agents/skills 查找（容器内即 /root/.agents/skills），
+      # 挂到 /app/.agents/skills 是没人读的路径
+      - ./.agents/skills:/root/.agents/skills
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app
@@ -34,7 +36,7 @@ services:
       # 拉不到时应用会告警并回退到 python:3.12-slim（技能里承诺的预装包会缺失）。
       - MOWEN_SANDBOX_IMAGE=${MOWEN_SANDBOX_IMAGE:-crpi-9pf9lin5vvnxq7uh.cn-hangzhou.personal.cr.aliyuncs.com/ininyumo/mowen-sandbox:latest}
       # 沙盒工作区根目录：必须与上面挂载的路径一致（容器内外同一绝对路径）
-      - MOWEN_SANDBOX_WORKSPACE=${MOWEN_SANDBOX_WORKSPACE:-/srv/mowen-sandbox}
+      - MOWEN_SANDBOX_WORKSPACE=${MOWEN_SANDBOX_WORKSPACE:-/opt/mowen-sandbox}
     restart: unless-stopped
     # 资源限制：2核4G 服务器。注意镜像内带 Playwright 的 Chrome，
     # 用到浏览器 MCP 时内存占用会明显上升，可按需调高。
