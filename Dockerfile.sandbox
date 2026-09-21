@@ -1,41 +1,42 @@
+# ==================== 沙盒镜像：Linux + Python 运行环境 ====================
+# 刻意保持精简：只保留常用 CLI 与文档处理 / 数据分析所需的 Python 包。
+# 相比旧版移除了（体积收益从几十 MB 到几百 MB 不等）：
+#   Node.js / npm、ffmpeg、build-essential(g++/make)、vim-tiny、nano
+# 容器由 server/agent/sandbox.py 按会话创建：no-new-privileges、挂载独立
+# workspace 目录、command 固定为 tail -f /dev/null、删除即回收，
+# 所以镜像里不需要常驻服务，也不需要 CMD / ENTRYPOINT。
 FROM python:3.12-slim
 
-# pip 阿里云镜像源（先配 pip 源，再装包才快）
-RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
-    pip config set global.trusted-host mirrors.aliyun.com
-
-# 换成中国镜像源加速
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    unzip zip tar gzip xz-utils bzip2 \
-    curl wget ca-certificates \
-    git build-essential \
-    jq file tree \
-    vim-tiny nano less \
-    nodejs npm \
-    sqlite3 \
-    ffmpeg \
-    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libffi8 \
+# 基础 CLI + WeasyPrint 需要的系统库与字体
+# （HTML→PDF 见 skills/document-conversion.md；无字体时 PDF 中的文字会渲染成空白）
+# 沙盒内若需要编译 C 扩展，可临时 apt-get install build-essential。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl wget \
+        git \
+        zip unzip tar gzip xz-utils bzip2 \
+        jq file tree less \
+        sqlite3 \
+        libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
+        fonts-dejavu-core \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 预装 Python 常用包（分批安装 + bash 重试，应对不稳定的镜像源）
-# 第一批：轻量包（秒装）
-RUN pip install --no-cache-dir --default-timeout=120 \
-    httpx html2text beautifulsoup4 lxml requests \
-    Pillow openpyxl pypdf python-docx chardet markdown weasyprint \
-    || pip install --no-cache-dir --default-timeout=120 \
-    httpx html2text beautifulsoup4 lxml requests \
-    Pillow openpyxl pypdf python-docx chardet markdown weasyprint
+# 文档处理 / 网络请求 / 图片（轻量，一次装完）
+RUN pip install --no-cache-dir --default-timeout=180 \
+        requests httpx beautifulsoup4 lxml html2text chardet \
+        Pillow openpyxl pypdf python-docx markdown weasyprint \
+    || pip install --no-cache-dir --default-timeout=300 \
+        requests httpx beautifulsoup4 lxml html2text chardet \
+        Pillow openpyxl pypdf python-docx markdown weasyprint
 
-# 第二批：重量级包（pandas/scipy/matplotlib 较大，单装 + 循环重试）
-RUN for pkg in pandas matplotlib seaborn scipy; do \
+# 数据分析（numpy/pandas/scipy 体积较大，逐个安装 + 重试）
+RUN for pkg in numpy pandas matplotlib seaborn scipy; do \
         for i in 1 2 3; do \
-            pip install --no-cache-dir --default-timeout=180 "$pkg" && break || sleep 5; \
+            pip install --no-cache-dir --default-timeout=300 "$pkg" && break || sleep 5; \
         done; \
     done
 
-# git 全局配置：提高大仓库性能
+# git 全局配置：提高大仓库操作性能
 RUN git config --global http.postBuffer 524288000 && \
     git config --global core.compression 0
 

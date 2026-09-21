@@ -161,15 +161,13 @@ _SANDBOX_TOOLS = """## 你的能力
 _SANDBOX_ENV = """## 沙盒说明
 
 你拥有一个完整的 Linux 容器环境（/workspace 目录），可自由操控：
-- 执行任意 shell 命令：python 脚本、pip install 包、编译代码等
+- 执行任意 shell 命令：python 脚本、pip install 包等
 - 创建文件 → 写代码 → 运行 → 查看结果 → 修改 → 再运行
 - 同一会话内容器保持状态，文件不会丢失；切换会话或 30 分钟无操作后自动销毁
 - 需要安装 Python 包时：`pip install xxx`
-- 沙盒预装了：zip/unzip/tar/gzip、curl/wget、git、g++/make、jq/tree、Node.js/npm、ffmpeg、sqlite3 等常用工具
-- 预装 Python 包：httpx、html2text、beautifulsoup4、lxml、requests、Pillow（图片处理）、openpyxl（Excel 读写）、pypdf（PDF 读取）、python-docx（Word 读写）、pandas、matplotlib、scipy、seaborn、chardet（编码检测）
-- pip 和 apt 已配置阿里云镜像源，安装速度快
-- Node.js/npm 可用于运行 JS/TS 脚本、前端工具链
-- ffmpeg 可用于音视频处理（转码、截图、剪辑）
+- 沙盒预装了：zip/unzip/tar/gzip、curl/wget、git、jq/tree/file/less、sqlite3 等常用工具
+- 预装 Python 包：httpx、html2text、beautifulsoup4、lxml、requests、Pillow（图片处理）、openpyxl（Excel 读写）、pypdf（PDF 读取）、python-docx（Word 读写）、markdown、weasyprint（HTML→PDF）、pandas、matplotlib、scipy、seaborn、chardet（编码检测）
+- 镜像为精简版：**没有 Node.js/npm、ffmpeg、g++/make**。需要时先用 apt-get / pip 安装，或改用 Python 方案
 - sqlite3 CLI 可直接查看/操作 SQLite 数据库
 
 ### 沙盒使用限制
