@@ -28,6 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# 依赖清单先于源码复制：依赖不常变，可命中 Docker 层缓存
+COPY pyproject.toml uv.lock ./
+
 # ---------- Python 依赖：严格按 uv.lock 安装 ----------
 # 不再手写包名清单。手写清单会漏包：此前漏了 beautifulsoup4 / html2text / chardet，
 # 容器里 fetch_webpage 与 Bing 搜索降级会直接 ImportError；而本地 dev 之所以正常，
@@ -41,10 +44,19 @@ WORKDIR /app
 # 运行时依赖的闭包，剩下的包名即此列表；多列或漏列都不会让安装失败，只影响体积。
 ENV NOTEBOOK_ONLY_RE="^(appnope|argon2-cffi|argon2-cffi-bindings|asttokens|async-lru|babel|bleach|comm|debugpy|decorator|defusedxml|executing|fastjsonschema|ipykernel|ipython|ipython-pygments-lexers|jedi|jinja2|json5|jupyter-builder|jupyter-client|jupyter-core|jupyter-events|jupyter-lsp|jupyter-server|jupyter-server-terminals|jupyterlab|jupyterlab-pygments|jupyterlab-server|markupsafe|matplotlib-inline|mistune|nbclient|nbconvert|nbformat|nest-asyncio2|notebook|notebook-shim|pandocfilters|parso|pexpect|platformdirs|prometheus-client|prompt-toolkit|psutil|ptyprocess|pure-eval|python-json-logger|pywinpty|pyzmq|send2trash|stack-data|terminado|tinycss2|tornado|traitlets|wcwidth|webencodings)=="
 
+# 下载源默认走官方；若构建机（如国内 ACR 构建节点）访问官方源带宽不足，
+# 可在构建参数里覆盖，无需改本文件，例如：
+#   PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+#   NPM_REGISTRY=https://registry.npmmirror.com
+#   PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG PLAYWRIGHT_DOWNLOAD_HOST=""
+
 RUN pip install --no-cache-dir "uv==0.11.26" \
  && uv export --frozen --no-dev --no-emit-project -o /tmp/req.txt \
  && grep -vE "$NOTEBOOK_ONLY_RE" /tmp/req.txt > /tmp/req-app.txt \
- && uv pip install --system --no-cache --index-url https://pypi.org/simple -r /tmp/req-app.txt \
+ && uv pip install --system --no-cache --index-url "$PIP_INDEX_URL" -r /tmp/req-app.txt \
  && rm -f /tmp/req.txt /tmp/req-app.txt \
  && python -c "import uvicorn, fastapi, langchain, langgraph, bs4, html2text, chardet; print('依赖校验通过')"
 
@@ -52,7 +64,8 @@ RUN pip install --no-cache-dir "uv==0.11.26" \
 # 全局安装而非运行时 npx -y 临时下载：避免容器里 bin 链接丢失导致加载 0 工具。
 # zod 是 @modelcontextprotocol/server-filesystem 的 ESM 解析依赖。
 RUN for i in 1 2 3; do \
-        npm install -g @playwright/mcp @modelcontextprotocol/server-filesystem zod && break || \
+        npm install -g --registry "$NPM_REGISTRY" \
+            @playwright/mcp @modelcontextprotocol/server-filesystem zod && break || \
         echo "npm 全局安装重试 $i/3..." && sleep 5; \
     done \
  && test -f "$(npm prefix -g)/lib/node_modules/@playwright/mcp/package.json" \
@@ -60,8 +73,10 @@ RUN for i in 1 2 3; do \
  && test -x "$(npm prefix -g)/bin/playwright-mcp" \
  && test -x "$(npm prefix -g)/bin/mcp-server-filesystem"
 
-# Playwright Chromium：浏览器走官方 CDN，系统库走 Debian 官方源
-RUN for i in 1 2 3; do \
+# Playwright Chromium：浏览器默认走官方 CDN（可用 PLAYWRIGHT_DOWNLOAD_HOST 覆盖），
+# 系统库走 Debian 官方源
+RUN if [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then export PLAYWRIGHT_DOWNLOAD_HOST; fi; \
+    for i in 1 2 3; do \
         npx @playwright/mcp install-browser chrome-for-testing && break || \
         echo "Playwright 浏览器安装重试 $i/3..." && sleep 5; \
     done \
