@@ -28,8 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 依赖清单先于源码复制：依赖不常变，可命中 Docker 层缓存
+# 依赖清单与过滤脚本先于源码复制：依赖不常变，可命中 Docker 层缓存
 COPY pyproject.toml uv.lock ./
+COPY deploy/filter_requirements.py /tmp/filter_requirements.py
 
 # ---------- Python 依赖：严格按 uv.lock 安装 ----------
 # 不再手写包名清单。手写清单会漏包：此前漏了 beautifulsoup4 / html2text / chardet，
@@ -38,11 +39,15 @@ COPY pyproject.toml uv.lock ./
 # 按锁文件安装还能避免版本漂移：旧写法用 >= 让 pip 取最新，镜像里 openai 从
 # 2.44 跳到 3.16，跟本地测试过的组合不是一套。
 #
-# NOTEBOOK_ONLY_RE 剔除只服务本地 notebook 的依赖链（notebook/ipykernel 及其独占依赖）。
+# NOTEBOOK_ONLY 剔除只服务本地 notebook 的依赖链（notebook/ipykernel 及其独占依赖）。
 # notebook/ 已在 .dockerignore 中，镜像里没有任何代码 import 它。
 # 重新生成：用 uv.lock 的依赖图求 notebook+ipykernel 的传递闭包，减去 pyproject
 # 运行时依赖的闭包，剩下的包名即此列表；多列或漏列都不会让安装失败，只影响体积。
-ENV NOTEBOOK_ONLY_RE="^(appnope|argon2-cffi|argon2-cffi-bindings|asttokens|async-lru|babel|bleach|comm|debugpy|decorator|defusedxml|executing|fastjsonschema|ipykernel|ipython|ipython-pygments-lexers|jedi|jinja2|json5|jupyter-builder|jupyter-client|jupyter-core|jupyter-events|jupyter-lsp|jupyter-server|jupyter-server-terminals|jupyterlab|jupyterlab-pygments|jupyterlab-server|markupsafe|matplotlib-inline|mistune|nbclient|nbconvert|nbformat|nest-asyncio2|notebook|notebook-shim|pandocfilters|parso|pexpect|platformdirs|prometheus-client|prompt-toolkit|psutil|ptyprocess|pure-eval|python-json-logger|pywinpty|pyzmq|send2trash|stack-data|terminado|tinycss2|tornado|traitlets|wcwidth|webencodings)=="
+#
+# 必须用脚本按"块"剔除，不能用 grep 按行删：uv export 每条依赖是多行块
+# （首行 + 缩进的 --hash 续行 + # via 注释），只删首行会留下孤立续行，
+# uv pip install 会直接报 "Unexpected '-', expected '-c', '-e', '-r' ..."。
+ENV NOTEBOOK_ONLY="appnope|argon2-cffi|argon2-cffi-bindings|asttokens|async-lru|babel|bleach|comm|debugpy|decorator|defusedxml|executing|fastjsonschema|ipykernel|ipython|ipython-pygments-lexers|jedi|jinja2|json5|jupyter-builder|jupyter-client|jupyter-core|jupyter-events|jupyter-lsp|jupyter-server|jupyter-server-terminals|jupyterlab|jupyterlab-pygments|jupyterlab-server|markupsafe|matplotlib-inline|mistune|nbclient|nbconvert|nbformat|nest-asyncio2|notebook|notebook-shim|pandocfilters|parso|pexpect|platformdirs|prometheus-client|prompt-toolkit|psutil|ptyprocess|pure-eval|python-json-logger|pywinpty|pyzmq|send2trash|stack-data|terminado|tinycss2|tornado|traitlets|wcwidth|webencodings"
 
 # 下载源默认走官方；若构建机（如国内 ACR 构建节点）访问官方源带宽不足，
 # 可在构建参数里覆盖，无需改本文件，例如：
@@ -55,7 +60,7 @@ ARG PLAYWRIGHT_DOWNLOAD_HOST=""
 
 RUN pip install --no-cache-dir "uv==0.11.26" \
  && uv export --frozen --no-dev --no-emit-project -o /tmp/req.txt \
- && grep -vE "$NOTEBOOK_ONLY_RE" /tmp/req.txt > /tmp/req-app.txt \
+ && python /tmp/filter_requirements.py --exclude-regex "$NOTEBOOK_ONLY" /tmp/req.txt /tmp/req-app.txt \
  && uv pip install --system --no-cache --index-url "$PIP_INDEX_URL" -r /tmp/req-app.txt \
  && rm -f /tmp/req.txt /tmp/req-app.txt \
  && python -c "import uvicorn, fastapi, langchain, langgraph, bs4, html2text, chardet; print('依赖校验通过')"
