@@ -78,11 +78,20 @@ python -m pytest tests/ --cov=server --cov=app --cov-report=term-missing  # 带�
 
 ### Docker 部署
 
+镜像由阿里云容器镜像服务（ACR）构建并托管，服务器上直接拉取启动：
+
+```sh
+docker compose pull
+docker compose up -d
+# 默认只绑 127.0.0.1:8001，由宿主机 Nginx 反代
+```
+
+本地开发想用本地构建的镜像：
+
 ```sh
 docker build -t mowen-app:latest -f Dockerfile.app .
 docker build -t mowen-sandbox:latest -f Dockerfile.sandbox .
-docker compose up -d
-# 访问 http://localhost
+MOWEN_APP_IMAGE=mowen-app:latest docker compose up -d
 ```
 
 ## 📁 项目结构
@@ -296,16 +305,27 @@ graph TD
 ### 部署方式
 
 ```sh
-# 方式一：一键部署（本地构建 → 传服务器 → 启动）
-chmod +x deploy/build-and-deploy.sh
-./deploy/build-and-deploy.sh 服务器IP
+# 1) 构建：在 ACR 控制台配两条构建规则，构建上下文都取仓库根
+#    - Dockerfile.app      -> <registry>/<ns>/mowen-agent:latest
+#    - Dockerfile.sandbox  -> <registry>/<ns>/mowen-sandbox:latest
 
-# 方式二：手动部署
-docker build -t mowen-app:latest -f Dockerfile.app .
-docker build -t mowen-sandbox:latest -f Dockerfile.sandbox .
+# 2) 服务器上拉取并启动
+docker compose pull                                  # 应用镜像
+docker pull <registry>/<ns>/mowen-sandbox:latest      # 沙盒镜像：compose 不管理它（运行时由宿主机 Docker 创建兄弟容器），
+                                                     # 未拉取时应用会告警并回退 python:3.12-slim（技能预装包会缺失）
 docker compose up -d
-curl http://localhost/api/health
+curl http://127.0.0.1:8001/api/health
+
+# 3) 可选：本地构建的镜像走 MOWEN_APP_IMAGE 覆盖，沙盒镜像同理用 MOWEN_SANDBOX_IMAGE
 ```
+
+镜像地址可用环境变量覆盖（也可写到 compose 同目录的 `.env`）：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MOWEN_APP_IMAGE` | ACR 的 `mowen-agent:latest` | 应用镜像 |
+| `MOWEN_SANDBOX_IMAGE` | ACR 的 `mowen-sandbox:latest` | 沙盒镜像（需先在宿主机 pull） |
+| `MOWEN_SANDBOX_WORKSPACE` | `/srv/mowen-sandbox` | 沙盒工作区根目录；该路径会交给宿主机 Docker 做 bind 挂载，**必须容器内外同路径**（compose 已按同路径挂载） |
 
 ### 日常运维
 

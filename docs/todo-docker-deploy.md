@@ -2,7 +2,8 @@
 
 > 状态：✅ 方案已设计完成
 > 创建时间：2026-07-07
-> 更新时间：2026-07-08
+> 更新时间：2026-07-08（2026-09 起部署改为 ACR 构建镜像 + 服务器 `docker compose pull`，
+> 原 `deploy/build-and-deploy.sh` 已删除；下文涉及本地构建/传输的部分为当时记录）
 > 服务器配置：2核 4G
 
 ## 资源约束
@@ -132,12 +133,12 @@ docker compose up -d
 
 | 文件 | 说明 |
 |------|------|
-| `Dockerfile.app` | 项目镜像：多阶段构建（前端 build + 后端 + Nginx） |
+| `Dockerfile.app` | 项目镜像：多阶段构建（前端 build + 后端 + Nginx，依赖按 uv.lock 锁定） |
 | `Dockerfile.sandbox` | 沙盒镜像（预装 Python 包 + 系统工具） |
-| `docker-compose.yml` | 编排配置（Docker Socket 挂载 + 数据卷 + 资源限制） |
+| `docker-compose.yml` | 编排配置（Docker Socket 挂载 + 数据卷 + 资源限制 + TZ/镜像地址可变） |
 | `deploy/nginx.conf` | Nginx 配置（SPA 路由 + API 反代 + SSE 支持） |
 | `deploy/start.sh` | 启动脚本（同时运行 Nginx + Uvicorn） |
-| `deploy/build-and-deploy.sh` | 一键部署脚本（本地构建 -> 传输 -> 启动） |
+| `deploy/filter_requirements.py` | 构建脚本：整块剔除只服务 notebook 的依赖（见 Dockerfile.app） |
 | `deploy/server-init.sh` | 服务器端初始化脚本（装 Docker + 创建目录） |
 | `.dockerignore` | Docker 构建排除规则 |
 
@@ -178,27 +179,16 @@ docker compose up -d
 | `_MAX_SANDBOXES` | 10 | **3** |
 | `_SANDBOX_IDLE_TIMEOUT` | 1800s | **900s** |
 
-### 一键部署
+### 部署（2026-09 起改为 ACR 构建）
 
 ```bash
-# 本地执行（需要能 ssh 到服务器）
-chmod +x deploy/build-and-deploy.sh
-./deploy/build-and-deploy.sh 123.45.67.89
-
-# 或手动分步：
-# 1. 本地构建
-docker build -t mowen-app:latest -f Dockerfile.app .
-docker build -t mowen-sandbox:latest -f Dockerfile.sandbox .
-
-# 2. 传输
-docker save mowen-app:latest | gzip > /tmp/mowen-app.tar.gz
-docker save mowen-sandbox:latest | gzip > /tmp/mowen-sandbox.tar.gz
-scp /tmp/mowen-*.tar.gz root@服务器IP:/tmp/
-
-# 3. 服务器加载 + 启动
-ssh root@服务器IP 'bash -s' < deploy/server-init.sh
-scp docker-compose.yml root@服务器IP:/root/mowen-deploy/
-ssh root@服务器IP 'cd /root/mowen-deploy && docker compose up -d'
+# 1) 在 ACR 控制台配两条构建规则，构建上下文取仓库根：
+#    Dockerfile.app      -> <registry>/<ns>/mowen-agent:latest
+#    Dockerfile.sandbox  -> <registry>/<ns>/mowen-sandbox:latest
+# 2) 服务器上拉取并启动：
+docker compose pull
+docker pull <registry>/<ns>/mowen-sandbox:latest   # 沙盒镜像不在 compose 服务列表里，需手动拉
+docker compose up -d
 ```
 
 ### 日常运维
@@ -210,8 +200,8 @@ docker compose logs -f
 # 重启
 docker compose restart
 
-# 更新（本地重新构建 -> 传输 -> 加载 -> 重启）
-./deploy/build-and-deploy.sh 服务器IP
+# 更新（ACR 重新构建之后）
+docker compose pull && docker compose up -d
 
 # 进入容器调试
 docker exec -it mowen-app bash

@@ -25,7 +25,11 @@ from server.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-_SANDBOX_IMAGE = "mowen-sandbox:latest"  # 优先用自建镜像（预装工具），不存在时回退到 python:3.12-slim
+# 优先用自建镜像（预装工具），不存在时回退到 python:3.12-slim。
+# 可用环境变量覆盖，便于直接引用镜像仓库里的镜像（如 ACR 构建产物）：
+#   MOWEN_SANDBOX_IMAGE=crpi-xxx.cn-hangzhou.personal.cr.aliyuncs.com/ns/mowen-sandbox:latest
+# 注意：该镜像由宿主机 Docker 创建兄弟容器，需先在宿主机 pull 好。
+_SANDBOX_IMAGE = os.environ.get("MOWEN_SANDBOX_IMAGE") or "mowen-sandbox:latest"
 _SANDBOX_MEMORY = "512m"
 _SANDBOX_MEMORY = "256m"   # 2核4G 服务器降为 256m（pandas 10万行仍可跑）
 _SANDBOX_CPU = 1.0
@@ -34,7 +38,27 @@ _BYTES_CAP = 20 * 1024 * 1024  # read_bytes 二进制读取上限（20MB，图�
 
 _DOWNLOADS_DIR = Path("downloads")  # 文件导出目录
 _UPLOADS_DIR = Path("uploads")      # 用户上传暂存目录
-_SANDBOX_WORKSPACE_DIR = Path("data/sandbox_workspaces")  # 沙盒工作区持久化目录
+
+# 沙盒工作区持久化目录。这个路径会作为 bind 源交给**宿主机的 Docker**（经 docker.sock），
+# 因此必须让容器内外的绝对路径一致，否则宿主机上找不到该路径、Docker 会自动新建一个空目录，
+# 结果沙盒实际挂在别处、应用侧看到的仍是空目录。容器里由 compose 以同路径挂载并设置该变量：
+#   MOWEN_SANDBOX_WORKSPACE=/srv/mowen-sandbox
+_SANDBOX_WORKSPACE_DIR = Path(os.environ.get("MOWEN_SANDBOX_WORKSPACE") or "data/sandbox_workspaces")
+
+# 容器内跑但没给环境变量时提醒一次：此时相对路径解析成 /app/data/...，宿主机上并不存在
+if not os.environ.get("MOWEN_SANDBOX_WORKSPACE") and Path("/.dockerenv").exists():
+    logger.warning(
+        "检测到容器环境但未设置 MOWEN_SANDBOX_WORKSPACE，沙盒工作区将按 %s 挂载；"
+        "该路径在宿主机上可能不存在，沙盒数据会落到宿主机新建的空目录。"
+        "容器部署请设置该变量并同步挂载（见 docker-compose.yml）",
+        _SANDBOX_WORKSPACE_DIR,
+    )
+
+
+def workspace_root_dir() -> Path:
+    """沙盒工作区根目录（宿主机侧路径，容器内外需一致）。"""
+    return _SANDBOX_WORKSPACE_DIR
+
 
 # 沙盒池配置
 _MAX_SANDBOXES = 3              # 2核4G 最多支撑 2-3 个并发沙盒

@@ -20,9 +20,6 @@ from server.agent.executor.base import (
 
 logger = get_logger(__name__)
 
-# 沙盒工作区宿主路径（与 server/agent/sandbox.py 中的 _SANDBOX_WORKSPACE_DIR 对应）
-_SANDBOX_WORKSPACE_DIR = Path("data/sandbox_workspaces")
-
 
 class SandboxExecutor(WorkspaceExecutor):
     """包装现有 Docker 沙盒的适配器。"""
@@ -42,8 +39,9 @@ class SandboxExecutor(WorkspaceExecutor):
         """返回沙盒工作区的宿主路径（用于路径信任根判断）。
 
         注意：真正的文件系统在容器内，这里只提供宿主机侧的挂载点路径。
+        路径取自 server/agent/sandbox.py 的 workspace_root_dir()，避免两处常量各写一份后漂移。
         """
-        ws = _SANDBOX_WORKSPACE_DIR.resolve() / (session_id or "default")
+        ws = self._sb.workspace_root_dir().resolve() / (session_id or "default")
         ws.mkdir(parents=True, exist_ok=True)
         return ws
 
@@ -127,5 +125,5 @@ class SandboxExecutor(WorkspaceExecutor):
             "running": [],
             "pool_total": pool.get("total", 0),
             "pool_max": pool.get("max", 0),
-            "workspace_root": str(_SANDBOX_WORKSPACE_DIR.resolve()),
+            "workspace_root": str(self._sb.workspace_root_dir().resolve()),
         }
