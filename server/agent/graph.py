@@ -275,11 +275,13 @@ def _build_messages(raw_messages: list[dict], config: RAGConfig | None = None, u
                 for f in image_files:
                     host_path = f"uploads/{f['token']}/{f['filename']}"
                     try:
-                        b64 = compress_image_to_data_url(host_path)
-                        if b64:
+                        # 注意：compress_image_to_data_url 返回的已是完整 data URL，
+                        # 不能再拼前缀，否则厂商解码时报 Invalid base64 data
+                        data_url = compress_image_to_data_url(host_path)
+                        if data_url:
                             multimodal_content.append({
                                 "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                                "image_url": {"url": data_url},
                             })
                     except Exception as e:
                         logger.warning("读取图片失败: %s (%s)", host_path, e)

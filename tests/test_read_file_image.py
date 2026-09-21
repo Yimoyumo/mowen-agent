@@ -140,3 +140,65 @@ async def test_read_text_file_still_works(tmp_path):
     content = await _invoke_read("notes.txt")
 
     assert content == "hello 世界"
+
+
+# ==================== 用户上传图片的注入路径（graph._build_messages）====================
+
+async def test_uploaded_image_injected_as_single_data_url(tmp_path, monkeypatch):
+    """回归：上传图片注入多模态消息时，data URL 不能被套两层。
+
+    曾出现过 prefix 重复（data:image/jpeg;base64,data:image/jpeg;base64,...）导致
+    厂商返回 400 Invalid base64 data。read_file 那条路径是对的，此处单独守住上传路径。
+    """
+    from server.agent.graph import _build_messages
+
+    _patch_overrides(
+        monkeypatch,
+        {"openai/gpt-4o": {"context_window": 128000, "max_output": 16384, "has_vision": True}},
+    )
+    cfg = _make_config(tmp_path, "openai/gpt-4o")
+
+    # graph 里用的是相对路径 uploads/<token>/<文件名>，把工作目录切到 tmp_path
+    monkeypatch.chdir(tmp_path)
+    img_dir = tmp_path / "uploads" / "tok123"
+    img_dir.mkdir(parents=True)
+    (img_dir / "pic.png").write_bytes(_make_png_bytes())
+
+    messages, _ = _build_messages(
+        [{"role": "user", "content": "看看这张图"}],
+        cfg,
+        [{"token": "tok123", "filename": "pic.png"}],
+    )
+
+    blocks = messages[-1].content
+    assert isinstance(blocks, list), f"视觉模型应构建多模态 content，实际: {blocks!r}"
+    images = [b for b in blocks if b.get("type") == "image_url"]
+    assert len(images) == 1
+
+    url = images[0]["image_url"]["url"]
+    assert url.startswith("data:image/jpeg;base64,"), f"应为 JPEG data URL: {url[:60]!r}"
+    assert url.count("data:") == 1, f"data URL 被重复拼接: {url[:80]!r}"
+    # 去掉前缀后应是合法 base64
+    import base64
+
+    base64.b64decode(url.split(",", 1)[1], validate=True)
+
+
+async def test_uploaded_image_with_non_vision_model_gets_hint(tmp_path, monkeypatch):
+    """非视觉模型：不注入图片，改为提示"无法识别图片"。"""
+    from server.agent.graph import _build_messages
+
+    _patch_overrides(monkeypatch, {})
+    cfg = _make_config(tmp_path, "deepseek/deepseek-chat")
+    monkeypatch.chdir(tmp_path)
+
+    messages, _ = _build_messages(
+        [{"role": "user", "content": "看看这张图"}],
+        cfg,
+        [{"token": "tok123", "filename": "pic.png"}],
+    )
+
+    content = messages[-1].content
+    assert isinstance(content, str)
+    assert "不支持视觉" in content
+
