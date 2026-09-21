@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import InteractionCard from './InteractionCard.vue'
 import { renderMarkdown } from '@/utils/markdown'
-import { useChatStore } from '@/stores/chat'
-import type { MessageSegment, ToolSegmentStatus, InteractionRequest, AnswerInteractionPayload } from '@/types/api'
+import type { MessageSegment, ToolSegmentStatus } from '@/types/api'
 
 interface Props {
   type: 'user' | 'assistant'
@@ -19,8 +17,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   'toggleContext': []
 }>()
-
-const store = useChatStore()
 
 const showReasoning = ref(true)
 const expandedTools = ref<Set<number>>(new Set())
@@ -85,17 +81,6 @@ function statusInfo(status: ToolSegmentStatus): { text: string; cls: string } {
   }
 }
 
-/** 取某 tool segment 对应的待处理交互（存在才渲染 InteractionCard） */
-function pendingRequest(seg: MessageSegment): InteractionRequest | null {
-  if (seg.type !== 'tool' || !seg.requestId) return null
-  return store.getPendingInteraction(seg.requestId) ?? null
-}
-
-/** 提交交互回答 */
-async function handleAnswer(requestId: string, payload: AnswerInteractionPayload) {
-  if (!requestId) return
-  await store.answerInteraction(requestId, payload)
-}
 </script>
 
 <template>
@@ -150,12 +135,6 @@ async function handleAnswer(requestId: string, payload: AnswerInteractionPayload
                 <span class="detail-label">输出:</span>
                 <pre>{{ seg.output }}</pre>
               </div>
-              <!-- 待处理交互（审批 / ask_user）卡片 -->
-              <InteractionCard
-                v-if="seg.type === 'tool' && pendingRequest(seg)"
-                :request="pendingRequest(seg)"
-                @answer="(payload) => handleAnswer(seg.requestId ?? '', payload)"
-              />
             </div>
           </div>
         </template>

@@ -394,7 +394,8 @@ export function useChat() {
     try {
       const res = await getPendingInteractions(sessionId)
       for (const req of res.requests) {
-        store.addPendingInteraction(req)
+        // 带上会话 id：输入框上方的提示条按当前会话过滤，缺省的会被当成"当前会话"
+        store.addPendingInteraction(req, sessionId)
         // 若已有 segment 携带该 requestId（从后端恢复的），仅补登记；不主动创建
       }
     } catch {

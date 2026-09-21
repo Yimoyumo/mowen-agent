@@ -3,6 +3,7 @@ import { computed, ref, nextTick, watch } from 'vue'
 import HomeHero from '@/components/home/HomeHero.vue'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
+import InteractionPrompt from '@/components/chat/InteractionPrompt.vue'
 import type { ChatMessage as ChatMessageType, ConfigResponse } from '@/types/api'
 
   interface Props {
@@ -188,6 +189,9 @@ defineExpose({ scrollToBottom })
         />
       </template>
     </div>
+
+    <!-- 审批 / ask_user 停靠在输入框上方，避免被折叠的工具卡埋没 -->
+    <InteractionPrompt />
 
     <ChatInput
       :model-value="question"

@@ -162,7 +162,7 @@ export interface StreamingChatCallbacks {
 
 // ==================== 交互（HITL）类型 ====================
 // 统一承载"权限审批"与"ask_user 主动提问"两类交互请求，
-// 后端通过 SSE 推送，前端借此渲染 InteractionCard。
+// 后端通过 SSE 推送，前端借此渲染 InteractionPrompt（输入框上方的提示条）。
 
 export type InteractionKind = 'approval' | 'ask_user'
 

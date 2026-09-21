@@ -35,7 +35,7 @@ graph TD
     EX -->|回退| SB[🐳 Docker 沙盒适配器]
     T --> MCP[🔧 MCP 外部工具]
     EX -->|权限审批| PA[权限引擎 classify]
-    PA -->|ASK| UI[InteractionCard 审批/提问]
+    PA -->|ASK| UI[InteractionPrompt 审批/提问]
     A -->|流式输出| SSE[SSE: token + tool + interaction 事件]
     SSE --> U
 ```
@@ -188,7 +188,7 @@ Agent 在宿主机上执行命令/文件操作是**去沙盒化**的有意设计
 | `ask_dangerous`（默认） | 高危命令拒绝；危险命令（rm/cp/pip/apt/curl 等）弹卡片审批；只读命令自动放行 |
 | `ask_all` | 除 DENY 外所有命令/文件操作都需审批 |
 
-**交互卡片（InteractionCard）** 展示：审批时显示命令、风险说明与"允许一次 / 本次会话 / 总是允许"作用域；提问（`ask_user`）时显示问题与选项（可多选）。**审批作用域**：`once` 单次、`session` 本次会话语义缓存、`always` 写入 `executor.persistent_allow` 持久生效。
+**交互提示条（InteractionPrompt）** 停靠在输入框上方（不再嵌在消息流里——工具卡默认折叠，审批请求容易被埋没），展示：审批时显示命令、风险说明与"允许一次 / 本次会话 / 总是允许"作用域；提问（`ask_user`）时显示问题与选项（可多选）。多条请求同时到达时排队展示，审批优先并在头部标注"还有 N 个待处理"。**审批作用域**：`once` 单次、`session` 本次会话语义缓存、`always` 写入 `executor.persistent_allow` 持久生效。
 
 **超时行为**：审批卡片 `approval_timeout`（默认 120s）未应答 → 视为拒绝并不执行；提问 `ask_timeout`（默认 300s）未应答 → Agent 基于合理假设继续并明确说明。非流式/无人值守场景（`stream=False`）自动降级为 `no_ui`，审批快速失败、提问改为假设继续。
 
