@@ -143,6 +143,12 @@ _DEFAULT_SETTINGS = {
     "updated_at": None,
 }
 
+# 只在首次运行（用户文件里还没有该 section）时注入的"种子"配置：
+# 文件里一旦存在该 section 就以文件为准（允许被删空）。
+# mcp_servers 的内置项（filesystem / playwright）用户可以在 UI 里删除，
+# 若仍走 {**默认, **用户} 的合并，被删项会被默认值补回来。
+_SEED_ONLY_SECTIONS = {"mcp_servers"}
+
 
 def _split_model_ref(ref: str) -> tuple[str, str]:
     if "/" in ref:
@@ -313,8 +319,11 @@ class UserSettings:
         # 先处理默认值中的 key
         for k, dv in _DEFAULT_SETTINGS.items():
             if isinstance(dv, dict) and not k.startswith("_"):
-                uv = data.get(k) if isinstance(data.get(k), dict) else {}
-                r[k] = {**dv, **uv}
+                uv = data.get(k)
+                if k in _SEED_ONLY_SECTIONS and isinstance(uv, dict):
+                    r[k] = dict(uv)
+                else:
+                    r[k] = {**dv, **(uv if isinstance(uv, dict) else {})}
             elif isinstance(dv, list):
                 r[k] = data.get(k, dv)
             else:

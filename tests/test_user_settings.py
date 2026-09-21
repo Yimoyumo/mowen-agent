@@ -130,6 +130,25 @@ class TestMerge:
         # deepseek 的 api_key 被覆盖
         assert merged["providers"]["deepseek"]["api_key"] == OVERRIDE_KEY
 
+    def test_merge_mcp_servers_file_wins(self):
+        """mcp_servers 以文件为准：删掉内置服务器后不会被默认值补回来。"""
+        us = UserSettings()
+        user_data = {"mcp_servers": {"gh_grep": {"command": "gh-grep", "args": [], "transport": "http"}}}
+        merged = us._merge(user_data)
+        assert list(merged["mcp_servers"]) == ["gh_grep"]
+
+    def test_merge_mcp_servers_allow_empty(self):
+        """全部删除（空 dict）也不回填默认服务器。"""
+        us = UserSettings()
+        merged = us._merge({"mcp_servers": {}})
+        assert merged["mcp_servers"] == {}
+
+    def test_merge_mcp_servers_seed_when_absent(self):
+        """文件里没有该 section 时仍注入默认种子（首次运行语义）。"""
+        us = UserSettings()
+        merged = us._merge({})
+        assert "filesystem" in merged["mcp_servers"]
+
 
 class TestDeepMerge:
     """UserSettings._deep_merge 测试。"""
@@ -177,6 +196,21 @@ class TestUserSettingsLoadSave:
         us._cached_data = None
         loaded = us.load()
         assert loaded["active_model"] == "deepseek/test-model"
+
+    def test_delete_seeded_mcp_server_stays_deleted(self, tmp_path, monkeypatch):
+        """删除内置 MCP 服务器后落盘且重新加载不再出现（回归：删了又回来）。"""
+        settings_file = tmp_path / "user_settings.json"
+        monkeypatch.setattr("server.core.user_settings._SETTINGS_FILE", settings_file)
+        monkeypatch.setattr("server.core.user_settings._DATA_DIR", tmp_path)
+
+        us = UserSettings()
+        data = us.load()                       # 首次运行 → 写入默认（含 filesystem）
+        assert "filesystem" in data["mcp_servers"]
+        del data["mcp_servers"]["filesystem"]
+        us.save(data)
+
+        assert "filesystem" not in json.loads(settings_file.read_text(encoding="utf-8"))["mcp_servers"]
+        assert "filesystem" not in UserSettings().load()["mcp_servers"]
 
     def test_load_nonexistent_creates_default(self, tmp_path, monkeypatch):
         """文件不存在时自动创建默认配置。"""
